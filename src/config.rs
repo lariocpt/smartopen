@@ -9,15 +9,46 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     #[serde(default)]
+    pub menu: MenuConfig,
+    #[serde(default)]
+    pub extension: Vec<ExtensionAssociation>,
+    #[serde(default)]
+    pub folder: Vec<FolderAssociation>,
+    #[serde(default)]
     pub association: Vec<Association>,
     #[serde(default)]
     pub shortcut: Vec<CommandEntry>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MenuConfig {
+    #[serde(default)]
+    pub art_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Association {
     #[serde(rename = "match")]
     pub match_rule: MatchRule,
+    #[serde(default, rename = "command")]
+    pub commands: Vec<CommandEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExtensionAssociation {
+    pub extensions: Vec<String>,
+    #[serde(default)]
+    pub names: Vec<String>,
+    #[serde(default, rename = "command")]
+    pub commands: Vec<CommandEntry>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct FolderAssociation {
+    #[serde(default)]
+    pub names: Vec<String>,
+    #[serde(default)]
+    pub paths: Vec<String>,
     #[serde(default, rename = "command")]
     pub commands: Vec<CommandEntry>,
 }
@@ -29,7 +60,11 @@ pub struct MatchRule {
     #[serde(default)]
     pub names: Vec<String>,
     #[serde(default)]
+    pub name_patterns: Vec<String>,
+    #[serde(default)]
     pub dirs: Option<bool>,
+    #[serde(default)]
+    pub empty: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -44,17 +79,18 @@ pub struct CommandEntry {
     pub cwd: Option<String>,
 }
 
+pub const DEFAULT_MENU_ART: &str = include_str!("../examples/art/default.txt");
 pub const SAMPLE_CONFIG: &str = include_str!("../examples/config.toml");
 
 pub fn default_config_path() -> Result<PathBuf> {
     let base_dirs = BaseDirs::new().ok_or_else(|| anyhow!("could not determine home directory"))?;
-    Ok(base_dirs.config_dir().join("smartopen").join("config.toml"))
+    Ok(base_dirs.config_dir().join("opn").join("config.toml"))
 }
 
 pub fn load_config(path: &Path) -> Result<Config> {
     if !path.exists() {
         bail!(
-            "no config found at {}\ncreate one with: smartopen --init-config",
+            "no config found at {}\ncreate one with: opn --init-config",
             path.display()
         );
     }
@@ -88,11 +124,85 @@ pub fn init_config(path: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn load_menu_art(config: &Config, config_path: &Path) -> Result<String> {
+    let Some(art_file) = config.menu.art_file.as_deref() else {
+        return Ok(DEFAULT_MENU_ART.to_string());
+    };
+
+    let art_path = resolve_config_relative_path(config_path, art_file)?;
+    fs::read_to_string(&art_path)
+        .with_context(|| format!("failed to read menu art at {}", art_path.display()))
+}
+
+fn resolve_config_relative_path(config_path: &Path, path: &str) -> Result<PathBuf> {
+    let expanded = shellexpand::full(path)
+        .with_context(|| format!("failed to expand path '{path}'"))?
+        .into_owned();
+    let path = PathBuf::from(expanded);
+
+    if path.is_absolute() {
+        return Ok(path);
+    }
+
+    Ok(config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(path))
+}
+
 pub fn describe_config(config: &Config, path: &Path) -> String {
     let mut output = String::new();
 
     output.push_str(&format!("Config: {}\n", path.display()));
-    output.push_str("\nAssociations:\n");
+    output.push_str("\nMenu:\n");
+    if let Some(art_file) = &config.menu.art_file {
+        output.push_str(&format!("  art_file: {art_file}\n"));
+    } else {
+        output.push_str("  art_file: (built-in default)\n");
+    }
+
+    output.push_str("\nExtension Associations:\n");
+    if config.extension.is_empty() {
+        output.push_str("  (none)\n");
+    } else {
+        for (index, association) in config.extension.iter().enumerate() {
+            output.push_str(&format!(
+                "  {}. extensions={:?}{}\n",
+                index + 1,
+                association.extensions,
+                describe_optional_names(&association.names)
+            ));
+            for command in &association.commands {
+                output.push_str(&format!(
+                    "     - {}{}\n",
+                    command.label,
+                    describe_command_details(command)
+                ));
+            }
+        }
+    }
+
+    output.push_str("\nFolder Associations:\n");
+    if config.folder.is_empty() {
+        output.push_str("  (none)\n");
+    } else {
+        for (index, association) in config.folder.iter().enumerate() {
+            output.push_str(&format!(
+                "  {}. {}\n",
+                index + 1,
+                describe_folder_match(association)
+            ));
+            for command in &association.commands {
+                output.push_str(&format!(
+                    "     - {}{}\n",
+                    command.label,
+                    describe_command_details(command)
+                ));
+            }
+        }
+    }
+
+    output.push_str("\nGeneric Associations:\n");
     if config.association.is_empty() {
         output.push_str("  (none)\n");
     } else {
@@ -138,14 +248,44 @@ fn describe_match_rule(rule: &MatchRule) -> String {
     if !rule.names.is_empty() {
         parts.push(format!("names={:?}", rule.names));
     }
+    if !rule.name_patterns.is_empty() {
+        parts.push(format!("name_patterns={:?}", rule.name_patterns));
+    }
     if let Some(dirs) = rule.dirs {
         parts.push(format!("dirs={dirs}"));
+    }
+    if let Some(empty) = rule.empty {
+        parts.push(format!("empty={empty}"));
     }
 
     if parts.is_empty() {
         "(empty)".to_string()
     } else {
         parts.join(", ")
+    }
+}
+
+fn describe_folder_match(association: &FolderAssociation) -> String {
+    if association.paths.is_empty() && association.names.is_empty() {
+        return "any folder".to_string();
+    }
+
+    let mut parts = Vec::new();
+    if !association.paths.is_empty() {
+        parts.push(format!("paths={:?}", association.paths));
+    }
+    if !association.names.is_empty() {
+        parts.push(format!("names={:?}", association.names));
+    }
+
+    parts.join(", ")
+}
+
+fn describe_optional_names(names: &[String]) -> String {
+    if names.is_empty() {
+        String::new()
+    } else {
+        format!(", names={names:?}")
     }
 }
 
@@ -171,7 +311,57 @@ mod tests {
     fn sample_config_parses() {
         let config: Config = toml::from_str(SAMPLE_CONFIG).expect("sample config should parse");
 
+        assert_eq!(config.extension.len(), 7);
+        assert_eq!(config.folder.len(), 1);
         assert_eq!(config.association.len(), 2);
         assert_eq!(config.shortcut.len(), 2);
+    }
+
+    #[test]
+    fn menu_art_uses_default_when_no_file_is_configured() {
+        let config = Config {
+            menu: MenuConfig::default(),
+            extension: Vec::new(),
+            folder: Vec::new(),
+            association: Vec::new(),
+            shortcut: Vec::new(),
+        };
+
+        let art = load_menu_art(&config, Path::new("/tmp/opn/config.toml"))
+            .expect("default art should load");
+
+        assert_eq!(art, DEFAULT_MENU_ART);
+    }
+
+    #[test]
+    fn menu_art_file_paths_are_relative_to_config_file() {
+        let root = std::env::temp_dir().join(format!(
+            "opn-art-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        ));
+        let art_dir = root.join("art");
+        fs::create_dir_all(&art_dir).expect("test art dir should be created");
+        fs::write(art_dir.join("banner.txt"), "CUSTOM\n").expect("test art should be written");
+
+        let config = Config {
+            menu: MenuConfig {
+                art_file: Some("art/banner.txt".to_string()),
+            },
+            extension: Vec::new(),
+            folder: Vec::new(),
+            association: Vec::new(),
+            shortcut: Vec::new(),
+        };
+
+        let art =
+            load_menu_art(&config, &root.join("config.toml")).expect("relative art should load");
+
+        assert_eq!(art, "CUSTOM\n");
+
+        let _ = fs::remove_dir_all(root);
     }
 }

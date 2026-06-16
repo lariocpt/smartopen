@@ -1,28 +1,209 @@
-# smartopen example config
+# opn example config
+#
+# These associations mirror the built-in rules from ../yazi-opener-config:
+# directories -> terminal/tree/croft/gram/code, Markdown -> mdfried, Office files -> doxx/xleak,
+# CSV -> csvi/qo/xan/micro/gram, .env* -> lazyenv, HTML -> Gram/Micro, text/code -> Micro/Gram.
 
-[[association]]
-match = { extensions = ["rs"] }
+# Optional: uncomment to use a banner file above interactive menus.
+# Relative art paths resolve from this config file's directory.
+#
+# [menu]
+# art_file = "art/default.txt"
 
-[[association.command]]
-label = "Open in editor"
-description = "Edit this Rust file"
+[[folder]]
+
+[[folder.command]]
+label = "Open in Terminal"
+description = "Open this folder in terminal"
+icon = "[term]"
+run = "terminal {path}"
+
+[[folder.command]]
+label = "View with Tree"
+description = "View folder structure with tree"
+icon = "[tree]"
+run = "tree {path}"
+
+[[folder.command]]
+label = "Open in Croft"
+description = "Open folder in croft"
+icon = "[dir]"
+run = "croft {path}"
+
+[[folder.command]]
+label = "Open in Gram"
+description = "Open folder in gram"
+icon = "[gram]"
+run = "gram {path}"
+
+[[folder.command]]
+label = "Open in VS Code"
+description = "Open folder in VS Code"
+icon = "[code]"
+run = "code {path}"
+
+[[extension]]
+extensions = ["code-workspace"]
+
+[[extension.command]]
+label = "Open in VS Code"
+description = "Open workspace in VS Code"
+icon = "[code]"
+run = "code {path}"
+
+[[extension]]
+extensions = ["md", "markdown"]
+
+[[extension.command]]
+label = "Render Markdown"
+description = "View rendered Markdown with mdfried"
+icon = "[md]"
+run = "mdfried {path}"
+
+[[extension.command]]
+label = "Edit"
+description = "Open in ${EDITOR:-micro}"
 icon = "[edit]"
-run = "${EDITOR:-nano} {path}"
+run = "${EDITOR:-micro} {path}"
 
-[[association.command]]
-label = "Print file"
-description = "Write file contents to the terminal"
-icon = "[cat]"
-run = "cat {path}"
+[[extension.command]]
+label = "Reveal"
+description = "Open the containing folder"
+icon = "[dir]"
+run = "xdg-open {dir}"
+
+[[extension]]
+extensions = ["docx"]
+
+[[extension.command]]
+label = "View Word document"
+description = "View .docx with doxx"
+icon = "[docx]"
+run = "doxx {path}"
+
+[[extension.command]]
+label = "Reveal"
+description = "Open the containing folder"
+icon = "[dir]"
+run = "xdg-open {dir}"
+
+[[extension]]
+extensions = ["xlsx", "xls"]
+
+[[extension.command]]
+label = "View spreadsheet"
+description = "View Excel files with xleak interactive mode"
+icon = "[xls]"
+run = "xleak -i {path}"
+
+[[extension.command]]
+label = "Reveal"
+description = "Open the containing folder"
+icon = "[dir]"
+run = "xdg-open {dir}"
+
+[[extension]]
+extensions = ["csv"]
+
+[[extension.command]]
+label = "Open in csvi"
+description = "View CSV with csvi"
+icon = "[csv]"
+run = "csvi {path}"
+
+[[extension.command]]
+label = "Open in qo"
+description = "View CSV with qo"
+icon = "[csv]"
+run = "qo {path}"
+
+[[extension.command]]
+label = "View CSV with xan"
+description = "View CSV with xan, paged and without the 100-row cap"
+icon = "[csv]"
+run = "xan view -p -A {path}"
+
+[[extension.command]]
+label = "Edit in Micro"
+description = "Open the CSV file in micro"
+icon = "[edit]"
+run = "micro {path}"
+
+[[extension.command]]
+label = "Open in Gram"
+description = "Open the CSV file in Gram"
+icon = "[gram]"
+run = "gram {path}"
 
 [[association]]
-match = { dirs = true }
+match = { dirs = false, names = [".env"], name_patterns = [".env.*", "*.env"] }
 
 [[association.command]]
-label = "List directory"
-description = "Show directory contents"
-icon = "[ls]"
-run = "ls -la {path}"
+label = "Edit env"
+description = "Open lazyenv for the target file's parent folder"
+icon = "[env]"
+run = "lazyenv {dir}"
+
+[[association.command]]
+label = "Edit"
+description = "Open in ${EDITOR:-micro}"
+icon = "[edit]"
+run = "${EDITOR:-micro} {path}"
+
+[[association.command]]
+label = "Reveal"
+description = "Open the containing folder"
+icon = "[dir]"
+run = "xdg-open {dir}"
+
+[[extension]]
+extensions = ["html", "htm", "xhtml"]
+
+[[extension.command]]
+label = "Open in Gram"
+description = "Open the HTML file in Gram"
+icon = "[gram]"
+run = "gram {path}"
+
+[[extension.command]]
+label = "Edit in Micro"
+description = "Open the HTML file in micro"
+icon = "[edit]"
+run = "micro {path}"
+
+[[extension]]
+extensions = [
+  "txt", "text", "log",
+  "json", "js", "mjs", "cjs",
+  "toml", "yaml", "yml", "xml",
+  "sh", "bash", "zsh", "fish",
+  "rs", "py", "ts", "tsx", "jsx",
+  "css", "scss", "sass", "less",
+  "c", "h", "cpp", "hpp", "go",
+  "java", "kt", "kts", "lua", "rb",
+  "php", "sql", "ini", "conf", "cfg",
+]
+
+[[extension.command]]
+label = "Edit in Micro"
+description = "Open text/code in micro"
+icon = "[edit]"
+run = "micro {path}"
+
+[[extension.command]]
+label = "Open in Gram"
+description = "Open text/code in Gram"
+icon = "[gram]"
+run = "gram {path}"
+
+[[association]]
+match = { dirs = false, empty = true }
+
+[[association.command]]
+label = "Edit"
+description = "Open empty files directly in micro"
+icon = "[edit]"
+run = "micro {path}"
 
 [[shortcut]]
 label = "Project shell"

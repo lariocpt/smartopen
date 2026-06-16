@@ -1,4 +1,5 @@
 mod config;
+mod doctor;
 mod matcher;
 mod menu;
 mod runner;
@@ -10,14 +11,16 @@ use clap::Parser;
 
 use crate::config::{
     CommandEntry, SAMPLE_CONFIG, default_config_path, describe_config, init_config, load_config,
+    load_menu_art,
 };
+use crate::doctor::print_doctor;
 use crate::matcher::{Target, matching_commands};
 use crate::menu::select_command;
 use crate::runner::{plan_command, run_command, shell_quote};
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "smartopen",
+    name = "opn",
     version,
     about = "Open files and shortcuts from configurable command menus"
 )]
@@ -36,6 +39,9 @@ struct Cli {
 
     #[arg(long, help = "List configured associations and shortcuts")]
     list: bool,
+
+    #[arg(long, help = "Check config, menu art, and command availability")]
+    doctor: bool,
 
     #[arg(long, help = "Print a sample config")]
     sample_config: bool,
@@ -86,16 +92,33 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    if cli.doctor {
+        print_doctor(&config, &config_path)?;
+        return Ok(());
+    }
+
     match cli.path {
         Some(path) => {
             let target = Target::from_path(&path)?;
-            let commands = matching_commands(&config.association, &target);
+            let commands = matching_commands(&config, &config_path, &target)?;
 
             if commands.is_empty() {
                 bail!("no matching commands for {}", target.path.display());
             }
 
-            if let Some(command) = resolve_command("Choose a command", &commands, &cli.command)? {
+            if cli.command.is_none() && commands.len() == 1 {
+                execute_or_print(&commands[0], Some(&target), cli.dry_run)?;
+                return Ok(());
+            }
+
+            let menu_art = menu_art_for_selection(&config, &config_path, &cli.command)?;
+            if let Some(command) = resolve_command(
+                "Choose a command",
+                &commands,
+                &cli.command,
+                &menu_art,
+                Some(&target),
+            )? {
                 execute_or_print(&command, Some(&target), cli.dry_run)?;
             }
         }
@@ -104,9 +127,14 @@ fn main() -> Result<()> {
                 bail!("no shortcuts configured in {}", config_path.display());
             }
 
-            if let Some(command) =
-                resolve_command("Choose a shortcut", &config.shortcut, &cli.command)?
-            {
+            let menu_art = menu_art_for_selection(&config, &config_path, &cli.command)?;
+            if let Some(command) = resolve_command(
+                "Choose a shortcut",
+                &config.shortcut,
+                &cli.command,
+                &menu_art,
+                None,
+            )? {
                 execute_or_print(&command, None, cli.dry_run)?;
             }
         }
@@ -154,13 +182,27 @@ fn edit_config(path: &Path) -> Result<()> {
     run_command(&command, None)
 }
 
+fn menu_art_for_selection(
+    config: &crate::config::Config,
+    config_path: &Path,
+    requested_label: &Option<String>,
+) -> Result<String> {
+    if requested_label.is_some() {
+        return Ok(String::new());
+    }
+
+    load_menu_art(config, config_path)
+}
+
 fn resolve_command(
     prompt: &str,
     commands: &[CommandEntry],
     requested_label: &Option<String>,
+    menu_art: &str,
+    target: Option<&Target>,
 ) -> Result<Option<CommandEntry>> {
     let Some(label) = requested_label else {
-        return select_command(prompt, commands);
+        return select_command(prompt, commands, menu_art, target);
     };
 
     let label_lower = label.to_lowercase();

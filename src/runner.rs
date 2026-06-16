@@ -1,3 +1,4 @@
+use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -10,6 +11,31 @@ use crate::matcher::Target;
 pub struct ExecutionPlan {
     pub command: String,
     pub cwd: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommandAvailability {
+    Found { executable: String, path: PathBuf },
+    Missing { executable: String },
+    Dynamic { reason: String },
+    Empty,
+}
+
+impl CommandAvailability {
+    pub fn summary(&self) -> String {
+        match self {
+            Self::Found { executable, path } => {
+                format!("{executable}: found at {}", path.display())
+            }
+            Self::Missing { executable } => format!("{executable}: missing from PATH"),
+            Self::Dynamic { reason } => format!("dynamic shell command: {reason}"),
+            Self::Empty => "empty command".to_string(),
+        }
+    }
+
+    pub fn is_problem(&self) -> bool {
+        matches!(self, Self::Missing { .. } | Self::Empty)
+    }
 }
 
 pub fn run_command(command: &CommandEntry, target: Option<&Target>) -> Result<()> {
@@ -49,6 +75,17 @@ pub fn plan_command(command: &CommandEntry, target: Option<&Target>) -> Result<E
         command: command_line,
         cwd,
     })
+}
+
+pub fn command_availability(command_line: &str) -> CommandAvailability {
+    match first_executable(command_line) {
+        ExecutableHint::Name(executable) => match find_executable(&executable) {
+            Some(path) => CommandAvailability::Found { executable, path },
+            None => CommandAvailability::Missing { executable },
+        },
+        ExecutableHint::Dynamic(reason) => CommandAvailability::Dynamic { reason },
+        ExecutableHint::Empty => CommandAvailability::Empty,
+    }
 }
 
 pub fn render_command(command: &CommandEntry, target: Option<&Target>) -> Result<String> {
@@ -120,6 +157,137 @@ pub fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ExecutableHint {
+    Name(String),
+    Dynamic(String),
+    Empty,
+}
+
+fn first_executable(command_line: &str) -> ExecutableHint {
+    let mut offset = 0;
+    let mut allow_assignment = true;
+
+    while let Some((word, next_offset)) = next_shell_word(command_line, offset) {
+        offset = next_offset;
+
+        if word.is_empty() {
+            continue;
+        }
+
+        if starts_with_shell_expansion(&word) {
+            return ExecutableHint::Dynamic(format!("starts with {word}"));
+        }
+
+        if allow_assignment && is_env_assignment(&word) {
+            continue;
+        }
+
+        allow_assignment = false;
+
+        if matches!(word.as_str(), "sudo" | "doas" | "command" | "exec") {
+            continue;
+        }
+
+        if contains_shell_expansion(&word) {
+            return ExecutableHint::Dynamic(format!("executable contains expansion: {word}"));
+        }
+
+        return ExecutableHint::Name(word);
+    }
+
+    ExecutableHint::Empty
+}
+
+fn next_shell_word(command_line: &str, start: usize) -> Option<(String, usize)> {
+    let mut index = start;
+    let mut word = String::new();
+    let mut chars = command_line[start..].char_indices().peekable();
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+
+    while let Some((relative_index, ch)) = chars.peek().copied() {
+        index = start + relative_index;
+        if !in_single_quote && !in_double_quote && ch.is_whitespace() {
+            chars.next();
+            continue;
+        }
+        break;
+    }
+
+    while let Some((relative_index, ch)) = chars.next() {
+        index = start + relative_index + ch.len_utf8();
+
+        if !in_single_quote && !in_double_quote && ch.is_whitespace() {
+            break;
+        }
+
+        if !in_single_quote && !in_double_quote && matches!(ch, '|' | ';' | '&' | '(') {
+            break;
+        }
+
+        match ch {
+            '\'' if !in_double_quote => in_single_quote = !in_single_quote,
+            '"' if !in_single_quote => in_double_quote = !in_double_quote,
+            '\\' if !in_single_quote => {
+                if let Some((_, escaped)) = chars.next() {
+                    word.push(escaped);
+                    index += escaped.len_utf8();
+                }
+            }
+            _ => word.push(ch),
+        }
+    }
+
+    if word.is_empty() && index >= command_line.len() {
+        None
+    } else if word.is_empty() {
+        next_shell_word(command_line, index)
+    } else {
+        Some((word, index))
+    }
+}
+
+fn starts_with_shell_expansion(word: &str) -> bool {
+    word.starts_with('$') || word.starts_with('`')
+}
+
+fn contains_shell_expansion(word: &str) -> bool {
+    word.contains('$') || word.contains('`')
+}
+
+fn is_env_assignment(word: &str) -> bool {
+    let Some((name, _value)) = word.split_once('=') else {
+        return false;
+    };
+
+    if name.is_empty() {
+        return false;
+    }
+
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn find_executable(executable: &str) -> Option<PathBuf> {
+    let executable_path = Path::new(executable);
+    if executable_path.components().count() > 1 {
+        return executable_path
+            .exists()
+            .then(|| executable_path.to_path_buf());
+    }
+
+    let path = env::var_os("PATH")?;
+    env::split_paths(&path)
+        .map(|directory| directory.join(executable))
+        .find(|candidate| candidate.is_file())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,6 +300,7 @@ mod tests {
             stem: "hello world".to_string(),
             ext: "rs".to_string(),
             is_dir: false,
+            is_empty: false,
         }
     }
 
@@ -194,6 +363,42 @@ mod tests {
 
         assert_eq!(plan.command, "cargo build");
         assert!(plan.cwd.is_some());
+    }
+
+    #[test]
+    fn first_executable_finds_simple_binary() {
+        assert_eq!(
+            first_executable("csvi {path}"),
+            ExecutableHint::Name("csvi".to_string())
+        );
+    }
+
+    #[test]
+    fn first_executable_skips_env_assignments_and_wrappers() {
+        assert_eq!(
+            first_executable("FOO=bar sudo xan view {path}"),
+            ExecutableHint::Name("xan".to_string())
+        );
+    }
+
+    #[test]
+    fn first_executable_marks_shell_expansion_as_dynamic() {
+        assert_eq!(
+            first_executable("${EDITOR:-nano} {path}"),
+            ExecutableHint::Dynamic("starts with ${EDITOR:-nano}".to_string())
+        );
+    }
+
+    #[test]
+    fn command_availability_reports_missing_binary() {
+        let availability = command_availability("definitely-not-installed-opn-test-binary {path}");
+
+        assert_eq!(
+            availability,
+            CommandAvailability::Missing {
+                executable: "definitely-not-installed-opn-test-binary".to_string()
+            }
+        );
     }
 
     #[test]

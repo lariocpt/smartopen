@@ -1,0 +1,28 @@
+# opn example config with a custom menu banner
+
+[menu]
+art_file = "art/terminal.txt"
+
+[[extension]]
+extensions = ["rs"]
+
+[[extension.command]]
+label = "Open in editor"
+description = "Edit this Rust file"
+icon = "[edit]"
+run = "${EDITOR:-nano} {path}"
+
+[[folder]]
+
+[[folder.command]]
+label = "List directory"
+description = "Show directory contents"
+icon = "[ls]"
+run = "ls -la {path}"
+
+[[shortcut]]
+label = "Cargo test"
+description = "Run the Rust test suite"
+icon = "[test]"
+run = "cargo test"
+cwd = "."
