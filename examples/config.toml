@@ -1,0 +1,39 @@
+# smartopen example config
+
+[[association]]
+match = { extensions = ["rs"] }
+
+[[association.command]]
+label = "Open in editor"
+description = "Edit this Rust file"
+icon = "[edit]"
+run = "${EDITOR:-nano} {path}"
+
+[[association.command]]
+label = "Print file"
+description = "Write file contents to the terminal"
+icon = "[cat]"
+run = "cat {path}"
+
+[[association]]
+match = { dirs = true }
+
+[[association.command]]
+label = "List directory"
+description = "Show directory contents"
+icon = "[ls]"
+run = "ls -la {path}"
+
+[[shortcut]]
+label = "Project shell"
+description = "Open a shell in this project"
+icon = "[sh]"
+run = "${SHELL:-sh}"
+cwd = "."
+
+[[shortcut]]
+label = "Cargo test"
+description = "Run the Rust test suite"
+icon = "[test]"
+run = "cargo test"
+cwd = "."
