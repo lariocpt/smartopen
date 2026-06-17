@@ -133,6 +133,12 @@ run = "xdg-open {dir}"
 extensions = ["html", "htm", "xhtml"]
 
 [[extension.command]]
+label = "Open in Lynx"
+description = "Browse the HTML file in the lynx terminal browser"
+icon = "🌐"
+run = "lynx {path}"
+
+[[extension.command]]
 label = "Open in Carbonyl"
 description = "Open the HTML file in the carbonyl terminal browser"
 icon = "🌐"
