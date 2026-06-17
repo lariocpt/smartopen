@@ -25,10 +25,10 @@ icon = "🌲"
 run = "tree {path}"
 
 [[folder.command]]
-label = "Open in Croft"
-description = "Open folder in croft"
+label = "Open in IDE"
+description = "Open folder in $IDE"
 icon = "📁"
-run = "croft {path}"
+run = "${IDE:-croft} {path}"
 
 [[extension]]
 extensions = ["md", "markdown"]
@@ -106,7 +106,7 @@ run = "xan view -p -A {path}"
 label = "Edit in Micro"
 description = "Open the CSV file in micro"
 icon = "✏️"
-run = "micro {path}"
+run = "${EDITOR:-micro} {path}"
 
 [[association]]
 match = { dirs = false, names = [".env"], name_patterns = [".env.*", "*.env"] }
@@ -148,7 +148,22 @@ run = "carbonyl {path}"
 label = "Edit in Micro"
 description = "Open the HTML file in micro"
 icon = "✏️"
-run = "micro {path}"
+run = "${EDITOR:-micro} {path}"
+
+[[extension]]
+extensions = ["sql"]
+
+[[extension.command]]
+label = "Open in SQL IDE"
+description = "Open the SQL file in $SQL_IDE"
+icon = "🗄️"
+run = "${SQL_IDE:-harlequin} {path}"
+
+[[extension.command]]
+label = "Edit"
+description = "Open in $EDITOR"
+icon = "✏️"
+run = "${EDITOR:-micro} {path}"
 
 [[extension]]
 extensions = [
@@ -160,14 +175,14 @@ extensions = [
   "css", "scss", "sass", "less",
   "c", "h", "cpp", "hpp", "go",
   "java", "kt", "kts", "lua", "rb",
-  "php", "sql", "ini", "conf", "cfg",
+  "php", "ini", "conf", "cfg",
 ]
 
 [[extension.command]]
 label = "Edit in Micro"
 description = "Open text/code in micro"
 icon = "✏️"
-run = "micro {path}"
+run = "${EDITOR:-micro} {path}"
 
 [[association]]
 match = { dirs = false, empty = true }
@@ -176,7 +191,7 @@ match = { dirs = false, empty = true }
 label = "Edit"
 description = "Open empty files directly in micro"
 icon = "✏️"
-run = "micro {path}"
+run = "${EDITOR:-micro} {path}"
 
 [[shortcut]]
 label = "Project shell"
@@ -225,6 +240,13 @@ label = "pik"
 description = "Interactive process manager and killer"
 icon = "🗡️"
 run = "pik"
+cwd = "."
+
+[[shortcut]]
+label = "Zenith"
+description = "System monitor with zoomable CPU/mem/disk/net charts"
+icon = "📊"
+run = "zenith"
 cwd = "."
 
 [[shortcut]]
