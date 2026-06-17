@@ -315,7 +315,7 @@ mod tests {
     fn sample_config_parses() {
         let config: Config = toml::from_str(SAMPLE_CONFIG).expect("sample config should parse");
 
-        assert_eq!(config.extension.len(), 7);
+        assert_eq!(config.extension.len(), 6);
         assert_eq!(config.folder.len(), 1);
         assert_eq!(config.association.len(), 2);
         assert_eq!(config.shortcut.len(), 21);

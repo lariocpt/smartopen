@@ -1,8 +1,8 @@
 # opn example config
 #
-# These associations mirror the built-in rules from ../yazi-opener-config:
-# directories -> terminal/tree/croft/gram/code, Markdown -> mdfried, Office files -> doxx/xleak,
-# CSV -> csvi/qo/xan/micro/gram, .env* -> lazyenv, HTML -> Gram/Micro, text/code -> Micro/Gram.
+# Terminal-first associations (GUI apps are opened normally, not from this menu):
+# directories -> terminal/tree/croft, Markdown -> mdfried, Office files -> doxx/xleak,
+# CSV -> csvi/qo/xan/micro, .env* -> lazyenv, HTML -> carbonyl/micro, text/code -> micro.
 
 # Optional: uncomment to use a banner file above interactive menus.
 # Relative art paths resolve from this config file's directory.
@@ -29,30 +29,6 @@ label = "Open in Croft"
 description = "Open folder in croft"
 icon = "📁"
 run = "croft {path}"
-
-[[folder.command]]
-label = "Open in Gram"
-description = "Open folder in gram"
-icon = "📖"
-run = "gram {path}"
-detach = true
-
-[[folder.command]]
-label = "Open in VS Code"
-description = "Open folder in VS Code"
-icon = "💻"
-run = "code {path}"
-detach = true
-
-[[extension]]
-extensions = ["code-workspace"]
-
-[[extension.command]]
-label = "Open in VS Code"
-description = "Open workspace in VS Code"
-icon = "💻"
-run = "code {path}"
-detach = true
 
 [[extension]]
 extensions = ["md", "markdown"]
@@ -132,13 +108,6 @@ description = "Open the CSV file in micro"
 icon = "✏️"
 run = "micro {path}"
 
-[[extension.command]]
-label = "Open in Gram"
-description = "Open the CSV file in Gram"
-icon = "📖"
-run = "gram {path}"
-detach = true
-
 [[association]]
 match = { dirs = false, names = [".env"], name_patterns = [".env.*", "*.env"] }
 
@@ -164,11 +133,10 @@ run = "xdg-open {dir}"
 extensions = ["html", "htm", "xhtml"]
 
 [[extension.command]]
-label = "Open in Gram"
-description = "Open the HTML file in Gram"
-icon = "📖"
-run = "gram {path}"
-detach = true
+label = "Open in Carbonyl"
+description = "Open the HTML file in the carbonyl terminal browser"
+icon = "🌐"
+run = "carbonyl {path}"
 
 [[extension.command]]
 label = "Edit in Micro"
@@ -194,13 +162,6 @@ label = "Edit in Micro"
 description = "Open text/code in micro"
 icon = "✏️"
 run = "micro {path}"
-
-[[extension.command]]
-label = "Open in Gram"
-description = "Open text/code in Gram"
-icon = "📖"
-run = "gram {path}"
-detach = true
 
 [[association]]
 match = { dirs = false, empty = true }
