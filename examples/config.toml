@@ -16,19 +16,38 @@
 label = "Open in Terminal"
 description = "Open this folder in terminal"
 icon = "🖥️"
-run = "terminal {path}"
+run = "${TERMINAL:-ghostty} --working-directory {path}"
 
 [[folder.command]]
-label = "View with Tree"
-description = "View folder structure with tree"
-icon = "🌲"
-run = "tree {path}"
+label = "Open in Editor"
+description = "Open folder in $EDITOR"
+icon = "✏️"
+run = "${EDITOR:-micro} {path}"
 
 [[folder.command]]
 label = "Open in IDE"
 description = "Open folder in $IDE"
 icon = "📁"
 run = "${IDE:-croft} {path}"
+
+[[folder.command]]
+label = "Open in Broot"
+description = "Explore folder with Broot"
+icon = "🌳"
+run = "broot {path}"
+
+[[folder.command]]
+label = "Git UI"
+description = "Git terminal interface"
+icon = "🌿"
+run = "sh -c 'cd \"$1\" && gitui' _ {path}"
+
+[[folder.command]]
+label = "Git Top"
+description = "Git dashboard"
+icon = "📈"
+run = "sh -c 'cd \"$1\" && gittop' _ {path}"
+
 
 [[extension]]
 extensions = ["md", "markdown"]
@@ -103,8 +122,8 @@ icon = "📊"
 run = "xan view -p -A {path}"
 
 [[extension.command]]
-label = "Edit in Micro"
-description = "Open the CSV file in micro"
+label = "Edit"
+description = "Open the CSV file in $EDITOR"
 icon = "✏️"
 run = "${EDITOR:-micro} {path}"
 
@@ -145,8 +164,8 @@ icon = "🌐"
 run = "carbonyl {path}"
 
 [[extension.command]]
-label = "Edit in Micro"
-description = "Open the HTML file in micro"
+label = "Edit"
+description = "Open the HTML file in $EDITOR"
 icon = "✏️"
 run = "${EDITOR:-micro} {path}"
 
@@ -179,8 +198,8 @@ extensions = [
 ]
 
 [[extension.command]]
-label = "Edit in Micro"
-description = "Open text/code in micro"
+label = "Edit"
+description = "Open text/code in $EDITOR"
 icon = "✏️"
 run = "${EDITOR:-micro} {path}"
 
@@ -189,7 +208,7 @@ match = { dirs = false, empty = true }
 
 [[association.command]]
 label = "Edit"
-description = "Open empty files directly in micro"
+description = "Open empty files directly in $EDITOR"
 icon = "✏️"
 run = "${EDITOR:-micro} {path}"
 
@@ -299,10 +318,10 @@ run = "ghostty"
 cwd = "."
 
 [[shortcut]]
-label = "Micro"
+label = "Editor"
 description = "Modern, intuitive terminal text editor"
 icon = "📝"
-run = "micro"
+run = "${EDITOR:-micro}"
 cwd = "."
 
 [[shortcut]]
@@ -346,3 +365,40 @@ description = "Read Word documents right in your terminal"
 icon = "📘"
 run = "doxx"
 cwd = "."
+
+[[shortcut]]
+label = "Ducker"
+description = "Docker TUI client"
+icon = "🐳"
+run = "ducker"
+cwd = "."
+
+[[shortcut]]
+label = "gitui"
+description = "Blazing fast terminal-ui for git"
+icon = "🌿"
+run = "gitui"
+cwd = "."
+
+[[shortcut]]
+label = "gittop"
+description = "Git dashboard"
+icon = "📈"
+run = "gittop"
+cwd = "."
+
+[[shortcut]]
+label = "Broot"
+description = "Explore files and folders from home"
+icon = "🌳"
+run = "broot ~"
+cwd = "."
+
+[[shortcut]]
+label = "Yazi"
+description = "Terminal file manager from home"
+icon = "📁"
+run = "yazi ~"
+cwd = "."
+
+

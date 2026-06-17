@@ -318,7 +318,7 @@ mod tests {
         assert_eq!(config.extension.len(), 7);
         assert_eq!(config.folder.len(), 1);
         assert_eq!(config.association.len(), 2);
-        assert_eq!(config.shortcut.len(), 22);
+        assert_eq!(config.shortcut.len(), 23);
     }
 
     #[test]
