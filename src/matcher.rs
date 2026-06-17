@@ -280,6 +280,7 @@ mod tests {
             icon: String::new(),
             run: format!("echo {label}"),
             cwd: None,
+            detach: false,
         }
     }
 

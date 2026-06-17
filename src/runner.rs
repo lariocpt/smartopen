@@ -41,6 +41,10 @@ impl CommandAvailability {
 pub fn run_command(command: &CommandEntry, target: Option<&Target>) -> Result<()> {
     let plan = plan_command(command, target)?;
 
+    if command.detach {
+        return spawn_detached(&plan, command);
+    }
+
     let mut process = shell_command(&plan.command);
     process
         .stdin(Stdio::inherit())
@@ -59,6 +63,25 @@ pub fn run_command(command: &CommandEntry, target: Option<&Target>) -> Result<()
         bail!("command '{}' exited with {status}", command.label);
     }
 
+    Ok(())
+}
+
+/// Launch a command fully in the background (GUI apps): no wait, no inherited stdio, so the
+/// menu returns immediately and a non-zero exit is not surfaced — the opener's `orphan`.
+fn spawn_detached(plan: &ExecutionPlan, command: &CommandEntry) -> Result<()> {
+    let mut process = shell_command(&plan.command);
+    process
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    if let Some(cwd) = &plan.cwd {
+        process.current_dir(cwd);
+    }
+
+    process
+        .spawn()
+        .with_context(|| format!("failed to launch '{}'", command.label))?;
     Ok(())
 }
 
@@ -312,6 +335,7 @@ mod tests {
             icon: String::new(),
             run: "vim {path}".to_string(),
             cwd: None,
+            detach: false,
         };
         let target = target_with_path(PathBuf::from("/tmp/project dir/hello world.rs"));
 
@@ -328,6 +352,7 @@ mod tests {
             icon: String::new(),
             run: "vim {path}".to_string(),
             cwd: None,
+            detach: false,
         };
 
         assert!(render_command(&command, None).is_err());
@@ -341,6 +366,7 @@ mod tests {
             icon: String::new(),
             run: "${EDITOR:-nano} {path}".to_string(),
             cwd: None,
+            detach: false,
         };
         let target = target_with_path(PathBuf::from("/tmp/file.rs"));
 
@@ -357,6 +383,7 @@ mod tests {
             icon: String::new(),
             run: "cargo build".to_string(),
             cwd: Some(".".to_string()),
+            detach: false,
         };
 
         let plan = plan_command(&command, None).expect("command should plan");

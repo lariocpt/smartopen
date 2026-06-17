@@ -15,32 +15,34 @@
 [[folder.command]]
 label = "Open in Terminal"
 description = "Open this folder in terminal"
-icon = "[term]"
+icon = "🖥️"
 run = "terminal {path}"
 
 [[folder.command]]
 label = "View with Tree"
 description = "View folder structure with tree"
-icon = "[tree]"
+icon = "🌲"
 run = "tree {path}"
 
 [[folder.command]]
 label = "Open in Croft"
 description = "Open folder in croft"
-icon = "[dir]"
+icon = "📁"
 run = "croft {path}"
 
 [[folder.command]]
 label = "Open in Gram"
 description = "Open folder in gram"
-icon = "[gram]"
+icon = "📖"
 run = "gram {path}"
+detach = true
 
 [[folder.command]]
 label = "Open in VS Code"
 description = "Open folder in VS Code"
-icon = "[code]"
+icon = "💻"
 run = "code {path}"
+detach = true
 
 [[extension]]
 extensions = ["code-workspace"]
@@ -48,8 +50,9 @@ extensions = ["code-workspace"]
 [[extension.command]]
 label = "Open in VS Code"
 description = "Open workspace in VS Code"
-icon = "[code]"
+icon = "💻"
 run = "code {path}"
+detach = true
 
 [[extension]]
 extensions = ["md", "markdown"]
@@ -57,19 +60,19 @@ extensions = ["md", "markdown"]
 [[extension.command]]
 label = "Render Markdown"
 description = "View rendered Markdown with mdfried"
-icon = "[md]"
+icon = "📝"
 run = "mdfried {path}"
 
 [[extension.command]]
 label = "Edit"
 description = "Open in ${EDITOR:-micro}"
-icon = "[edit]"
+icon = "✏️"
 run = "${EDITOR:-micro} {path}"
 
 [[extension.command]]
 label = "Reveal"
 description = "Open the containing folder"
-icon = "[dir]"
+icon = "📁"
 run = "xdg-open {dir}"
 
 [[extension]]
@@ -78,13 +81,13 @@ extensions = ["docx"]
 [[extension.command]]
 label = "View Word document"
 description = "View .docx with doxx"
-icon = "[docx]"
+icon = "📘"
 run = "doxx {path}"
 
 [[extension.command]]
 label = "Reveal"
 description = "Open the containing folder"
-icon = "[dir]"
+icon = "📁"
 run = "xdg-open {dir}"
 
 [[extension]]
@@ -93,13 +96,13 @@ extensions = ["xlsx", "xls"]
 [[extension.command]]
 label = "View spreadsheet"
 description = "View Excel files with xleak interactive mode"
-icon = "[xls]"
+icon = "📈"
 run = "xleak -i {path}"
 
 [[extension.command]]
 label = "Reveal"
 description = "Open the containing folder"
-icon = "[dir]"
+icon = "📁"
 run = "xdg-open {dir}"
 
 [[extension]]
@@ -108,32 +111,33 @@ extensions = ["csv"]
 [[extension.command]]
 label = "Open in csvi"
 description = "View CSV with csvi"
-icon = "[csv]"
+icon = "📊"
 run = "csvi {path}"
 
 [[extension.command]]
 label = "Open in qo"
 description = "View CSV with qo"
-icon = "[csv]"
+icon = "📊"
 run = "qo {path}"
 
 [[extension.command]]
 label = "View CSV with xan"
 description = "View CSV with xan, paged and without the 100-row cap"
-icon = "[csv]"
+icon = "📊"
 run = "xan view -p -A {path}"
 
 [[extension.command]]
 label = "Edit in Micro"
 description = "Open the CSV file in micro"
-icon = "[edit]"
+icon = "✏️"
 run = "micro {path}"
 
 [[extension.command]]
 label = "Open in Gram"
 description = "Open the CSV file in Gram"
-icon = "[gram]"
+icon = "📖"
 run = "gram {path}"
+detach = true
 
 [[association]]
 match = { dirs = false, names = [".env"], name_patterns = [".env.*", "*.env"] }
@@ -141,19 +145,19 @@ match = { dirs = false, names = [".env"], name_patterns = [".env.*", "*.env"] }
 [[association.command]]
 label = "Edit env"
 description = "Open lazyenv for the target file's parent folder"
-icon = "[env]"
+icon = "🔐"
 run = "lazyenv {dir}"
 
 [[association.command]]
 label = "Edit"
 description = "Open in ${EDITOR:-micro}"
-icon = "[edit]"
+icon = "✏️"
 run = "${EDITOR:-micro} {path}"
 
 [[association.command]]
 label = "Reveal"
 description = "Open the containing folder"
-icon = "[dir]"
+icon = "📁"
 run = "xdg-open {dir}"
 
 [[extension]]
@@ -162,13 +166,14 @@ extensions = ["html", "htm", "xhtml"]
 [[extension.command]]
 label = "Open in Gram"
 description = "Open the HTML file in Gram"
-icon = "[gram]"
+icon = "📖"
 run = "gram {path}"
+detach = true
 
 [[extension.command]]
 label = "Edit in Micro"
 description = "Open the HTML file in micro"
-icon = "[edit]"
+icon = "✏️"
 run = "micro {path}"
 
 [[extension]]
@@ -187,14 +192,15 @@ extensions = [
 [[extension.command]]
 label = "Edit in Micro"
 description = "Open text/code in micro"
-icon = "[edit]"
+icon = "✏️"
 run = "micro {path}"
 
 [[extension.command]]
 label = "Open in Gram"
 description = "Open text/code in Gram"
-icon = "[gram]"
+icon = "📖"
 run = "gram {path}"
+detach = true
 
 [[association]]
 match = { dirs = false, empty = true }
@@ -202,19 +208,152 @@ match = { dirs = false, empty = true }
 [[association.command]]
 label = "Edit"
 description = "Open empty files directly in micro"
-icon = "[edit]"
+icon = "✏️"
 run = "micro {path}"
 
 [[shortcut]]
 label = "Project shell"
-description = "Open a shell in this project"
-icon = "[sh]"
+description = "Drop into a shell within the current project"
+icon = "💻"
 run = "${SHELL:-sh}"
 cwd = "."
 
 [[shortcut]]
 label = "Cargo test"
-description = "Run the Rust test suite"
-icon = "[test]"
+description = "Run the Rust test suite to verify code"
+icon = "🧪"
 run = "cargo test"
+cwd = "."
+
+[[shortcut]]
+label = "Surge"
+description = "High-performance TUI download manager"
+icon = "🚀"
+run = "surge"
+cwd = "."
+
+[[shortcut]]
+label = "rtorrent"
+description = "Lightning-fast ncurses BitTorrent client"
+icon = "🧲"
+run = "rtorrent"
+cwd = "."
+
+[[shortcut]]
+label = "lazyenv"
+description = "Interactive visual .env file editor"
+icon = "🔐"
+run = "lazyenv"
+cwd = "."
+
+[[shortcut]]
+label = "Croft"
+description = "Lightweight full-featured Terminal IDE"
+icon = "🛠️"
+run = "croft"
+cwd = "."
+
+[[shortcut]]
+label = "pik"
+description = "Interactive process manager and killer"
+icon = "🗡️"
+run = "pik"
+cwd = "."
+
+[[shortcut]]
+label = "herdr"
+description = "Streamlined CLI task organizer"
+icon = "📋"
+run = "herdr"
+cwd = "."
+
+[[shortcut]]
+label = "sigye"
+description = "Beautiful TUI clock for the terminal"
+icon = "🕒"
+run = "sigye"
+cwd = "."
+
+[[shortcut]]
+label = "Carbonyl"
+description = "Chromium-based terminal web browser"
+icon = "🌐"
+run = "carbonyl"
+cwd = "."
+
+[[shortcut]]
+label = "redthread"
+description = "Navigate threads and networks via CLI"
+icon = "🧶"
+run = "redthread"
+cwd = "."
+
+[[shortcut]]
+label = "Harlequin"
+description = "Powerful terminal-based SQL IDE"
+icon = "🗄️"
+run = "harlequin"
+cwd = "."
+
+[[shortcut]]
+label = "Critique"
+description = "AI-assisted CLI code review tool"
+icon = "💬"
+run = "critique"
+cwd = "."
+
+[[shortcut]]
+label = "Ghostty"
+description = "Blazing fast native terminal emulator"
+icon = "👻"
+run = "ghostty"
+cwd = "."
+
+[[shortcut]]
+label = "Micro"
+description = "Modern, intuitive terminal text editor"
+icon = "📝"
+run = "micro"
+cwd = "."
+
+[[shortcut]]
+label = "csvi"
+description = "Fast and nimble terminal CSV viewer"
+icon = "📊"
+run = "csvi"
+cwd = "."
+
+[[shortcut]]
+label = "qo"
+description = "Advanced CSV query and viewing tool"
+icon = "🔍"
+run = "qo"
+cwd = "."
+
+[[shortcut]]
+label = "xan"
+description = "High-capacity paged CSV viewer"
+icon = "📄"
+run = "xan"
+cwd = "."
+
+[[shortcut]]
+label = "xleak"
+description = "Interactive terminal Excel viewer"
+icon = "📈"
+run = "xleak"
+cwd = "."
+
+[[shortcut]]
+label = "mdfried"
+description = "Vibrant terminal Markdown renderer"
+icon = "🖼️"
+run = "mdfried"
+cwd = "."
+
+[[shortcut]]
+label = "doxx"
+description = "Read Word documents right in your terminal"
+icon = "📘"
+run = "doxx"
 cwd = "."

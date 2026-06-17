@@ -77,6 +77,10 @@ pub struct CommandEntry {
     pub run: String,
     #[serde(default)]
     pub cwd: Option<String>,
+    /// Launch detached (fire-and-forget): no wait, no inherited stdio. For GUI apps that
+    /// shouldn't block the menu or surface a non-zero exit (the opener's `orphan`).
+    #[serde(default)]
+    pub detach: bool,
 }
 
 pub const DEFAULT_MENU_ART: &str = include_str!("../examples/art/default.txt");
@@ -314,7 +318,7 @@ mod tests {
         assert_eq!(config.extension.len(), 7);
         assert_eq!(config.folder.len(), 1);
         assert_eq!(config.association.len(), 2);
-        assert_eq!(config.shortcut.len(), 2);
+        assert_eq!(config.shortcut.len(), 21);
     }
 
     #[test]

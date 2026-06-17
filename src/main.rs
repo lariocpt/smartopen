@@ -177,6 +177,7 @@ fn edit_config(path: &Path) -> Result<()> {
         icon: String::new(),
         run,
         cwd: None,
+        detach: false,
     };
 
     run_command(&command, None)
