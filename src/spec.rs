@@ -99,7 +99,7 @@ impl Spec {
             opener(
                 "terminal",
                 Some("Open a folder in a NEW ghostty window, cd'd into it (orphan detaches it so it survives yazi exiting)."),
-                r#"ghostty --working-directory "$1""#,
+                r#"ghostty --working-directory "$1" >/dev/null 2>&1"#,
                 Some("Open in new ghostty"),
                 false, true, Some("linux"),
             ),

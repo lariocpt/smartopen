@@ -100,7 +100,7 @@ fn main() -> Result<()> {
     if cli.setup_yazi {
         let effective = engine::effective(&spec::Spec::builtin(), engine::Engine::Smartopen, "smartopen");
         let config_path = default_yazi_config_path()?;
-        match tomlio::apply(&config_path, &effective, false, false)? {
+        match tomlio::apply(&config_path, &effective, false, true)? {
             tomlio::Outcome::Created => println!("created {}", config_path.display()),
             tomlio::Outcome::Updated => println!("updated {}", config_path.display()),
             tomlio::Outcome::InSync => println!("already in sync: {}", config_path.display())

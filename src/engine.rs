@@ -25,7 +25,7 @@ fn smartopen_spec(bin: &str) -> Spec {
         name: "terminal".to_string(),
         doc: Some("Open a folder in a new ghostty window.".to_string()),
         runs: vec![OpenerRun {
-            run: r#"ghostty --working-directory "$1""#.to_string(),
+            run: r#"ghostty --working-directory "$1" >/dev/null 2>&1"#.to_string(),
             desc: Some("Open in new ghostty".to_string()),
             block: false,
             orphan: true,
