@@ -1,8 +1,14 @@
+mod broot;
 mod config;
+mod diff;
 mod doctor;
+mod engine;
 mod matcher;
 mod menu;
+mod render;
 mod runner;
+mod spec;
+mod tomlio;
 
 use std::path::{Path, PathBuf};
 
@@ -58,6 +64,12 @@ struct Cli {
 
     #[arg(long, help = "Print the selected command instead of running it")]
     dry_run: bool,
+
+    #[arg(long, help = "Configure yazi to use smartopen for file associations")]
+    setup_yazi: bool,
+
+    #[arg(long, help = "Configure broot to use smartopen for file associations")]
+    setup_broot: bool,
 }
 
 fn main() -> Result<()> {
@@ -82,6 +94,33 @@ fn main() -> Result<()> {
 
     if cli.edit_config {
         edit_config(&config_path)?;
+        return Ok(());
+    }
+
+    if cli.setup_yazi {
+        let effective = engine::effective(&spec::Spec::builtin(), engine::Engine::Smartopen, "smartopen");
+        let config_path = default_yazi_config_path()?;
+        match tomlio::apply(&config_path, &effective, false, false)? {
+            tomlio::Outcome::Created => println!("created {}", config_path.display()),
+            tomlio::Outcome::Updated => println!("updated {}", config_path.display()),
+            tomlio::Outcome::InSync => println!("already in sync: {}", config_path.display())
+        }
+        return Ok(());
+    }
+
+    if cli.setup_broot {
+        let effective = engine::effective(&spec::Spec::builtin(), engine::Engine::Smartopen, "smartopen");
+        let dir = broot_config_dir()?;
+        let (outcome, import_added) = broot::apply(&dir, &effective, false, false)?;
+        let f = dir.join("openers.hjson");
+        match outcome {
+            tomlio::Outcome::Created => println!("created {}", f.display()),
+            tomlio::Outcome::Updated => println!("updated {}", f.display()),
+            tomlio::Outcome::InSync => println!("already in sync: {}", f.display()),
+        }
+        if import_added {
+            println!("added openers.hjson import to {}", dir.join("conf.hjson").display());
+        }
         return Ok(());
     }
 
@@ -148,6 +187,16 @@ fn selected_config_path(path: Option<&Path>) -> Result<PathBuf> {
         Some(path) => expand_path(path),
         None => default_config_path(),
     }
+}
+
+fn broot_config_dir() -> Result<PathBuf> {
+    let bd = directories::BaseDirs::new().context("cannot determine home/config directory")?;
+    Ok(bd.config_dir().join("broot"))
+}
+
+fn default_yazi_config_path() -> Result<PathBuf> {
+    let bd = directories::BaseDirs::new().context("cannot determine home/config directory")?;
+    Ok(bd.config_dir().join("yazi").join("yazi.toml"))
 }
 
 fn expand_path(path: &Path) -> Result<PathBuf> {
