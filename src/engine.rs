@@ -21,12 +21,23 @@ pub fn effective(base: &Spec, engine: Engine, smartopen_bin: &str) -> Spec {
 }
 
 fn smartopen_spec(bin: &str) -> Spec {
-    let terminal = OpenerDef {
-        name: "terminal".to_string(),
-        doc: Some("Open a folder in a new ghostty window.".to_string()),
+    let gitui = OpenerDef {
+        name: "gitui".to_string(),
+        doc: Some("Open gitui for a directory.".to_string()),
         runs: vec![OpenerRun {
-            run: r#"ghostty --working-directory "$1" >/dev/null 2>&1"#.to_string(),
-            desc: Some("Open in new ghostty".to_string()),
+            run: r#"ghostty --working-directory "$1" -e "gitui" >/dev/null 2>&1"#.to_string(),
+            desc: Some("Open in gitui".to_string()),
+            block: false,
+            orphan: true,
+            for_platform: Some("linux".to_string()),
+        }],
+    };
+    let lazyenv = OpenerDef {
+        name: "lazyenv".to_string(),
+        doc: Some("Open lazyenv for a directory.".to_string()),
+        runs: vec![OpenerRun {
+            run: r#"ghostty --working-directory "$1" -e "lazyenv" >/dev/null 2>&1"#.to_string(),
+            desc: Some("Open in lazyenv".to_string()),
             block: false,
             orphan: true,
             for_platform: Some("linux".to_string()),
@@ -46,8 +57,8 @@ fn smartopen_spec(bin: &str) -> Spec {
     let rules = vec![
         OpenRule {
             matcher: Matcher::Mime("inode/directory".to_string()),
-            use_openers: vec!["terminal".to_string()],
-            doc: Some("directories still open a terminal".to_string()),
+            use_openers: vec!["gitui".to_string(), "lazyenv".to_string()],
+            doc: Some("directories open in gitui or lazyenv".to_string()),
         },
         OpenRule {
             matcher: Matcher::Mime("*".to_string()),
@@ -55,7 +66,7 @@ fn smartopen_spec(bin: &str) -> Spec {
             doc: Some("everything else -> smartopen (it runs its own open-with menu)".to_string()),
         },
     ];
-    Spec { openers: vec![terminal, smart], prepend_rules: rules }
+    Spec { openers: vec![gitui, lazyenv, smart], prepend_rules: rules }
 }
 
 #[cfg(test)]
