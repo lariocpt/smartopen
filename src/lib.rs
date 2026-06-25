@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-mod broot;
+
 mod config;
 mod diff;
 mod doctor;
@@ -70,8 +70,7 @@ struct Cli {
     #[arg(long, help = "Configure yazi to use smartopen for file associations")]
     setup_yazi: bool,
 
-    #[arg(long, help = "Configure broot to use smartopen for file associations")]
-    setup_broot: bool,
+
 }
 
 pub fn run() -> Result<()> {
@@ -110,21 +109,7 @@ pub fn run() -> Result<()> {
         return Ok(());
     }
 
-    if cli.setup_broot {
-        let effective = engine::effective(&spec::Spec::builtin(), engine::Engine::Smartopen, "smartopen");
-        let dir = broot_config_dir()?;
-        let (outcome, import_added) = broot::apply(&dir, &effective, false, false)?;
-        let f = dir.join("openers.hjson");
-        match outcome {
-            tomlio::Outcome::Created => println!("created {}", f.display()),
-            tomlio::Outcome::Updated => println!("updated {}", f.display()),
-            tomlio::Outcome::InSync => println!("already in sync: {}", f.display()),
-        }
-        if import_added {
-            println!("added openers.hjson import to {}", dir.join("conf.hjson").display());
-        }
-        return Ok(());
-    }
+
 
     let config = load_config(&config_path)?;
 
@@ -191,10 +176,7 @@ fn selected_config_path(path: Option<&Path>) -> Result<PathBuf> {
     }
 }
 
-fn broot_config_dir() -> Result<PathBuf> {
-    let bd = directories::BaseDirs::new().context("cannot determine home/config directory")?;
-    Ok(bd.config_dir().join("broot"))
-}
+
 
 fn default_yazi_config_path() -> Result<PathBuf> {
     let bd = directories::BaseDirs::new().context("cannot determine home/config directory")?;
