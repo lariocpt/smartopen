@@ -43,6 +43,17 @@ fn smartopen_spec(bin: &str) -> Spec {
             for_platform: Some("linux".to_string()),
         }],
     };
+    let carbonyl = OpenerDef {
+        name: "carbonyl".to_string(),
+        doc: Some("Open in carbonyl (terminal browser).".to_string()),
+        runs: vec![OpenerRun {
+            run: r#"carbonyl "$@""#.to_string(),
+            desc: Some("Open in carbonyl".to_string()),
+            block: true,
+            orphan: false,
+            for_platform: Some("unix".to_string()),
+        }],
+    };
     let smart = OpenerDef {
         name: "smartopen".to_string(),
         doc: Some(format!("Delegate file opening to the `{bin}` smart opener.")),
@@ -61,12 +72,22 @@ fn smartopen_spec(bin: &str) -> Spec {
             doc: Some("directories open in gitui or lazyenv".to_string()),
         },
         OpenRule {
+            matcher: Matcher::Mime("video/*".to_string()),
+            use_openers: vec!["carbonyl".to_string(), "smartopen".to_string()],
+            doc: Some("videos open in carbonyl".to_string()),
+        },
+        OpenRule {
+            matcher: Matcher::Mime("image/*".to_string()),
+            use_openers: vec!["carbonyl".to_string(), "smartopen".to_string()],
+            doc: Some("images open in carbonyl".to_string()),
+        },
+        OpenRule {
             matcher: Matcher::Mime("*".to_string()),
             use_openers: vec!["smartopen".to_string()],
             doc: Some("everything else -> smartopen (it runs its own open-with menu)".to_string()),
         },
     ];
-    Spec { openers: vec![gitui, lazyenv, smart], prepend_rules: rules }
+    Spec { openers: vec![gitui, lazyenv, carbonyl, smart], prepend_rules: rules }
 }
 
 #[cfg(test)]
@@ -82,8 +103,8 @@ mod tests {
     #[test]
     fn smartopen_engine_shape() {
         let s = effective(&Spec::builtin(), Engine::Smartopen, "smartopen");
-        assert_eq!(s.openers.len(), 2);
-        assert_eq!(s.prepend_rules.len(), 2);
+        assert_eq!(s.openers.len(), 4);
+        assert_eq!(s.prepend_rules.len(), 4);
         assert!(s.openers.iter().any(|o| o.name == "smartopen"));
         s.validate().expect("smartopen spec must validate");
     }
