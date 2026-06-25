@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 mod broot;
 mod config;
 mod diff;
@@ -72,7 +74,7 @@ struct Cli {
     setup_broot: bool,
 }
 
-fn main() -> Result<()> {
+pub fn run() -> Result<()> {
     let cli = Cli::parse();
     let config_path = selected_config_path(cli.config_path.as_deref())?;
 

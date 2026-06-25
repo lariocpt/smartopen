@@ -16,10 +16,4 @@ similar = "3.1.1"
 thiserror = "2.0.18"
 toml_edit = "0.25.12"
 
-[[bin]]
-name = "smartopen"
-path = "src/main.rs"
 
-[[bin]]
-name = "opn"
-path = "src/main.rs"
