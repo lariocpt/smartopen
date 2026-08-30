@@ -33,10 +33,6 @@ impl CommandAvailability {
             Self::Empty => "empty command".to_string(),
         }
     }
-
-    pub fn is_problem(&self) -> bool {
-        matches!(self, Self::Missing { .. } | Self::Empty)
-    }
 }
 
 /// Run the command and return the exit code the child reported, so the launcher exits the

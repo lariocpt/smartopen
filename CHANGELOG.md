@@ -58,3 +58,13 @@ file manager, a shell keybinding, or the command line with one config.
 - **Exit codes are the launched command's.** `smartopen` exits with whatever the command
   it ran exited with (128+signal if a signal killed it), instead of turning every
   non-zero exit into a generic error and exit 1.
+- **A misspelt config key is an error.** Every table rejects unknown fields, so
+  `extension = ` where `extensions = ` was meant fails at load with the key named, instead
+  of producing a rule that silently never matches.
+- **`--json`** for `--list` and `--doctor`, for scripts and for the wizard.
+- **`--doctor` reports and exits 0.** A missing viewer is a finding, not a failure — a
+  config may name optional tools on purpose. `--strict` makes a missing command exit 1,
+  for CI. The report also names the platform and says which commands were skipped as
+  belonging to another OS.
+- **`smartopen completions <bash|zsh|fish|powershell|elvish>`** and **`smartopen man`**,
+  each naming whichever binary was invoked, so `opn completions zsh` completes `opn`.

@@ -24,13 +24,13 @@ mod spec;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
-use clap::Parser;
+use clap::{CommandFactory, Parser, Subcommand};
 
 use crate::config::{
     CommandEntry, SAMPLE_CONFIG, default_config_path, describe_config, init_config, load_config,
     load_menu_art,
 };
-use crate::doctor::print_doctor;
+use crate::doctor::{diagnose, render_text};
 use crate::history::History;
 use crate::matcher::{Target, matching_commands, shortcuts_here};
 use crate::menu::select_command;
@@ -44,6 +44,9 @@ use crate::shell::Shell;
     about = "Open files and shortcuts from configurable command menus"
 )]
 struct Cli {
+    #[command(subcommand)]
+    subcommand: Option<Subcommands>,
+
     #[arg(value_name = "PATH")]
     path: Option<PathBuf>,
 
@@ -61,6 +64,15 @@ struct Cli {
 
     #[arg(long, help = "Check config, menu art, and command availability")]
     doctor: bool,
+
+    #[arg(
+        long,
+        help = "With --doctor: exit 1 when a command is missing (the default is to report and exit 0)"
+    )]
+    strict: bool,
+
+    #[arg(long, help = "With --list or --doctor: print JSON instead of text")]
+    json: bool,
 
     #[arg(long, help = "Print a sample config")]
     sample_config: bool,
@@ -92,6 +104,17 @@ struct Cli {
     setup_yazi: bool,
 }
 
+#[derive(Debug, Subcommand)]
+enum Subcommands {
+    /// Print a shell completion script (source it, or install it where the shell looks)
+    Completions {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+    /// Print the manual page in roff (`smartopen man > smartopen.1`)
+    Man,
+}
+
 /// The process exit code for `main`: the launched command's own code on success, 1 after
 /// printing an error. Kept out of `run` so the binaries stay one line each.
 pub fn main_exit_code() -> i32 {
@@ -106,6 +129,11 @@ pub fn main_exit_code() -> i32 {
 
 pub fn run() -> Result<i32> {
     let cli = Cli::parse();
+
+    if let Some(subcommand) = cli.subcommand {
+        return run_subcommand(subcommand);
+    }
+
     let config_path = selected_config_path(cli.config_path.as_deref())?;
 
     if cli.config {
@@ -147,13 +175,32 @@ pub fn run() -> Result<i32> {
     let config = load_config(&config_path)?;
 
     if cli.list {
-        print!("{}", describe_config(&config, &config_path));
+        if cli.json {
+            let listing = serde_json::json!({
+                "config_path": config_path.display().to_string(),
+                "config": config,
+            });
+            println!("{}", serde_json::to_string_pretty(&listing)?);
+        } else {
+            print!("{}", describe_config(&config, &config_path));
+        }
         return Ok(0);
     }
 
     if cli.doctor {
-        print_doctor(&config, &config_path)?;
-        return Ok(0);
+        let report = diagnose(&config, &config_path);
+        if cli.json {
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        } else {
+            print!("{}", render_text(&report));
+        }
+        // A missing tool is a finding, not a failure: the config may name optional
+        // viewers on purpose. --strict is for scripts that want the exit code to say.
+        return Ok(if cli.strict && report.problems > 0 {
+            1
+        } else {
+            0
+        });
     }
 
     let mut history = if cli.no_history {
@@ -215,6 +262,34 @@ pub fn run() -> Result<i32> {
             }
         }
     }
+}
+
+fn run_subcommand(subcommand: Subcommands) -> Result<i32> {
+    // Completions and the man page name whichever binary was invoked, so `opn
+    // completions zsh` completes `opn`.
+    let bin_name = std::env::args()
+        .next()
+        .and_then(|arg0| {
+            Path::new(&arg0)
+                .file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned())
+        })
+        .unwrap_or_else(|| "smartopen".to_string());
+    // clap wants a 'static name; one small leak at process start is the idiom.
+    let bin_name: &'static str = Box::leak(bin_name.into_boxed_str());
+    let mut command = Cli::command().name(bin_name);
+
+    match subcommand {
+        Subcommands::Completions { shell } => {
+            clap_complete::generate(shell, &mut command, bin_name, &mut std::io::stdout());
+        }
+        Subcommands::Man => {
+            let mut out = Vec::new();
+            clap_mangen::Man::new(command).render(&mut out)?;
+            std::io::Write::write_all(&mut std::io::stdout(), &out)?;
+        }
+    }
+    Ok(0)
 }
 
 fn selected_config_path(path: Option<&Path>) -> Result<PathBuf> {
