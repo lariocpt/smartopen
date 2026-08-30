@@ -1,5 +1,7 @@
 mod config;
 mod doctor;
+mod fuzzy;
+mod history;
 mod matcher;
 mod menu;
 mod paths;
@@ -29,6 +31,7 @@ use crate::config::{
     load_menu_art,
 };
 use crate::doctor::print_doctor;
+use crate::history::History;
 use crate::matcher::{Target, matching_commands, shortcuts_here};
 use crate::menu::select_command;
 use crate::runner::{plan_command, run_command};
@@ -75,33 +78,54 @@ struct Cli {
     #[arg(long, help = "Print the selected command instead of running it")]
     dry_run: bool,
 
+    // FalseyValueParser so the env var works the way people set env vars: `=1`, `=yes`,
+    // `=true` all mean on; only empty, `0`, `false`, `no`, `off` mean off.
+    #[arg(
+        long,
+        env = "SMARTOPEN_NO_HISTORY",
+        value_parser = clap::builder::FalseyValueParser::new(),
+        help = "Neither read nor record which commands were picked"
+    )]
+    no_history: bool,
+
     #[arg(long, help = "Configure yazi to use smartopen for file associations")]
     setup_yazi: bool,
 }
 
-pub fn run() -> Result<()> {
+/// The process exit code for `main`: the launched command's own code on success, 1 after
+/// printing an error. Kept out of `run` so the binaries stay one line each.
+pub fn main_exit_code() -> i32 {
+    match run() {
+        Ok(code) => code,
+        Err(error) => {
+            eprintln!("error: {error:#}");
+            1
+        }
+    }
+}
+
+pub fn run() -> Result<i32> {
     let cli = Cli::parse();
     let config_path = selected_config_path(cli.config_path.as_deref())?;
 
     if cli.config {
         println!("{}", config_path.display());
-        return Ok(());
+        return Ok(0);
     }
 
     if cli.sample_config {
         print!("{SAMPLE_CONFIG}");
-        return Ok(());
+        return Ok(0);
     }
 
     if cli.init_config {
         init_config(&config_path)?;
         println!("created {}", config_path.display());
-        return Ok(());
+        return Ok(0);
     }
 
     if cli.edit_config {
-        edit_config(&config_path)?;
-        return Ok(());
+        return edit_config(&config_path);
     }
 
     if cli.setup_yazi {
@@ -117,20 +141,28 @@ pub fn run() -> Result<()> {
             tomlio::Outcome::Updated => println!("updated {}", config_path.display()),
             tomlio::Outcome::InSync => println!("already in sync: {}", config_path.display()),
         }
-        return Ok(());
+        return Ok(0);
     }
 
     let config = load_config(&config_path)?;
 
     if cli.list {
         print!("{}", describe_config(&config, &config_path));
-        return Ok(());
+        return Ok(0);
     }
 
     if cli.doctor {
         print_doctor(&config, &config_path)?;
-        return Ok(());
+        return Ok(0);
     }
+
+    let mut history = if cli.no_history {
+        History::disabled()
+    } else {
+        paths::state_path()
+            .map(History::load)
+            .unwrap_or_else(History::disabled)
+    };
 
     match cli.path {
         Some(path) => {
@@ -142,19 +174,22 @@ pub fn run() -> Result<()> {
             }
 
             if cli.command.is_none() && commands.len() == 1 {
-                execute_or_print(&commands[0], Some(&target), cli.dry_run)?;
-                return Ok(());
+                return execute_or_print(&commands[0], Some(&target), cli.dry_run, &mut history);
             }
 
             let menu_art = menu_art_for_selection(&config, &config_path, &cli.command)?;
-            if let Some(command) = resolve_command(
+            match resolve_command(
                 "Choose a command",
                 &commands,
                 &cli.command,
                 &menu_art,
                 Some(&target),
+                &history,
             )? {
-                execute_or_print(&command, Some(&target), cli.dry_run)?;
+                Some(command) => {
+                    execute_or_print(&command, Some(&target), cli.dry_run, &mut history)
+                }
+                None => Ok(0),
             }
         }
         None => {
@@ -167,19 +202,19 @@ pub fn run() -> Result<()> {
             }
 
             let menu_art = menu_art_for_selection(&config, &config_path, &cli.command)?;
-            if let Some(command) = resolve_command(
+            match resolve_command(
                 "Choose a shortcut",
                 &shortcuts,
                 &cli.command,
                 &menu_art,
                 None,
+                &history,
             )? {
-                execute_or_print(&command, None, cli.dry_run)?;
+                Some(command) => execute_or_print(&command, None, cli.dry_run, &mut history),
+                None => Ok(0),
             }
         }
     }
-
-    Ok(())
 }
 
 fn selected_config_path(path: Option<&Path>) -> Result<PathBuf> {
@@ -200,7 +235,7 @@ fn expand_path(path: &Path) -> Result<PathBuf> {
     Ok(PathBuf::from(expanded))
 }
 
-fn edit_config(path: &Path) -> Result<()> {
+fn edit_config(path: &Path) -> Result<i32> {
     if !path.exists() {
         init_config(path)?;
         println!("created {}", path.display());
@@ -244,9 +279,10 @@ fn resolve_command(
     requested_label: &Option<String>,
     menu_art: &str,
     target: Option<&Target>,
+    history: &History,
 ) -> Result<Option<CommandEntry>> {
     let Some(label) = requested_label else {
-        return select_command(prompt, commands, menu_art, target);
+        return select_command(prompt, commands, menu_art, target, history);
     };
 
     let label_lower = label.to_lowercase();
@@ -277,8 +313,15 @@ fn available_labels(commands: &[CommandEntry]) -> String {
         .join(", ")
 }
 
-fn execute_or_print(command: &CommandEntry, target: Option<&Target>, dry_run: bool) -> Result<()> {
+fn execute_or_print(
+    command: &CommandEntry,
+    target: Option<&Target>,
+    dry_run: bool,
+    history: &mut History,
+) -> Result<i32> {
     if !dry_run {
+        // Recorded before running, so a long-lived command still counts as picked.
+        history.record(&command.label);
         return run_command(command, target);
     }
 
@@ -288,5 +331,5 @@ fn execute_or_print(command: &CommandEntry, target: Option<&Target>, dry_run: bo
     }
     println!("command: {}", plan.command);
 
-    Ok(())
+    Ok(0)
 }

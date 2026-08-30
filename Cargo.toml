@@ -29,7 +29,6 @@ exclude = [
 # that existing yazi/broot/niri configurations invoke. Both call `smartopen::run()`.
 [[bin]]
 name = "smartopen"
-default-run = "smartopen"
 path = "src/bin/smartopen.rs"
 
 [[bin]]
@@ -38,7 +37,7 @@ path = "src/bin/opn.rs"
 
 [dependencies]
 anyhow = "1"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 crossterm = "0.28"
 ratatui = "0.29"
 serde = { version = "1", features = ["derive"] }

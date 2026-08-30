@@ -39,11 +39,15 @@ impl CommandAvailability {
     }
 }
 
-pub fn run_command(command: &CommandEntry, target: Option<&Target>) -> Result<()> {
+/// Run the command and return the exit code the child reported, so the launcher exits the
+/// way the launched program did. A detached launch reports 0: there is nothing to wait
+/// for. Only a failure to start at all is an error.
+pub fn run_command(command: &CommandEntry, target: Option<&Target>) -> Result<i32> {
     let plan = plan_command(command, target)?;
 
     if command.detach {
-        return spawn_detached(&plan, command);
+        spawn_detached(&plan, command)?;
+        return Ok(0);
     }
 
     let mut process = Shell::current().command(&plan.command);
@@ -60,11 +64,21 @@ pub fn run_command(command: &CommandEntry, target: Option<&Target>) -> Result<()
         .status()
         .with_context(|| format!("failed to run command '{}'", command.label))?;
 
-    if !status.success() {
-        bail!("command '{}' exited with {status}", command.label);
-    }
+    // No code means a signal killed it (Unix); 128+n is what shells report for that.
+    Ok(status
+        .code()
+        .unwrap_or_else(|| 128 + signal_number(&status)))
+}
 
-    Ok(())
+#[cfg(unix)]
+fn signal_number(status: &std::process::ExitStatus) -> i32 {
+    use std::os::unix::process::ExitStatusExt;
+    status.signal().unwrap_or(1)
+}
+
+#[cfg(not(unix))]
+fn signal_number(_status: &std::process::ExitStatus) -> i32 {
+    1
 }
 
 /// Launch a command fully in the background (GUI apps): no wait, no inherited stdio, so the

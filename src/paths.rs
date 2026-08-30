@@ -30,6 +30,19 @@ pub fn config_path() -> Option<PathBuf> {
     Some(current)
 }
 
+/// `$XDG_STATE_HOME/smartopen/state.toml` (Unix) or `%LOCALAPPDATA%\smartopen\state.toml`.
+pub fn state_path() -> Option<PathBuf> {
+    #[cfg(windows)]
+    let base = resolve_base(env::var_os("LOCALAPPDATA").map(PathBuf::from), None, &[]);
+    #[cfg(not(windows))]
+    let base = resolve_base(
+        env::var_os("XDG_STATE_HOME").map(PathBuf::from),
+        home_dir(),
+        &[".local", "state"],
+    );
+    Some(base?.join(APP_DIR).join("state.toml"))
+}
+
 /// yazi's `yazi.toml`: `~/.config/yazi/yazi.toml` on Unix and macOS,
 /// `%APPDATA%\yazi\config\yazi.toml` on Windows.
 pub fn yazi_config_path() -> Option<PathBuf> {
