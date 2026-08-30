@@ -1,4 +1,4 @@
-// cli-rust-menu — build `opn` (and its `smartopen` alias) and publish both to the LAN plane.
+// opn — build `opn` (and its `smartopen` alias) and publish both to the LAN plane.
 //
 //     curl -fsSL https://apps.in.drlario.org/install.sh | bash -s -- opn
 //
