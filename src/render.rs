@@ -24,7 +24,9 @@ pub fn fragment(spec: &Spec) -> String {
 
     out.push('\n');
     out.push_str("[open]\n");
-    out.push_str("# prepend_rules merge ABOVE yazi's built-ins (first match wins); order matters.\n");
+    out.push_str(
+        "# prepend_rules merge ABOVE yazi's built-ins (first match wins); order matters.\n",
+    );
     out.push_str("prepend_rules = [\n");
     for r in &spec.prepend_rules {
         if let Some(doc) = &r.doc {
@@ -76,7 +78,10 @@ fn render_rule(r: &OpenRule) -> String {
 
 /// A TOML bare key if safe, otherwise a quoted basic string.
 fn key(s: &str) -> String {
-    if !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    if !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
         s.to_string()
     } else {
         basic(s)

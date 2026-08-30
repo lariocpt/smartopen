@@ -8,7 +8,9 @@ pub fn unified(old: &str, new: &str) -> String {
         return String::new();
     }
     let diff = TextDiff::from_lines(old, new);
-    diff.unified_diff().header("a/yazi.toml", "b/yazi.toml").to_string()
+    diff.unified_diff()
+        .header("a/yazi.toml", "b/yazi.toml")
+        .to_string()
 }
 
 #[cfg(test)]

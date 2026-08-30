@@ -56,7 +56,9 @@ fn smartopen_spec(bin: &str) -> Spec {
     };
     let smart = OpenerDef {
         name: "smartopen".to_string(),
-        doc: Some(format!("Delegate file opening to the `{bin}` smart opener.")),
+        doc: Some(format!(
+            "Delegate file opening to the `{bin}` smart opener."
+        )),
         runs: vec![OpenerRun {
             run: format!(r#"{bin} "$@""#),
             desc: Some("smartopen".to_string()),
@@ -87,7 +89,10 @@ fn smartopen_spec(bin: &str) -> Spec {
             doc: Some("everything else -> smartopen (it runs its own open-with menu)".to_string()),
         },
     ];
-    Spec { openers: vec![gitui, lazyenv, carbonyl, smart], prepend_rules: rules }
+    Spec {
+        openers: vec![gitui, lazyenv, carbonyl, smart],
+        prepend_rules: rules,
+    }
 }
 
 #[cfg(test)]
@@ -111,7 +116,11 @@ mod tests {
 
     #[test]
     fn smartopen_bin_is_configurable() {
-        let s = effective(&Spec::builtin(), Engine::Smartopen, "/usr/local/bin/smartopen");
+        let s = effective(
+            &Spec::builtin(),
+            Engine::Smartopen,
+            "/usr/local/bin/smartopen",
+        );
         let smart = s.openers.iter().find(|o| o.name == "smartopen").unwrap();
         assert!(smart.runs[0].run.starts_with("/usr/local/bin/smartopen "));
     }

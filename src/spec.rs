@@ -64,7 +64,9 @@ pub enum SpecError {
     AmbiguousMatcher(usize),
     #[error("rule #{0} has an empty `use` list")]
     EmptyUse(usize),
-    #[error("rule #{rule} references undefined opener '{name}' (define it under [opener] or use a yazi built-in)")]
+    #[error(
+        "rule #{rule} references undefined opener '{name}' (define it under [opener] or use a yazi built-in)"
+    )]
     UnknownOpener { rule: usize, name: String },
     #[error("duplicate opener name '{0}'")]
     DuplicateOpener(String),
@@ -86,7 +88,10 @@ impl Spec {
             }
             for u in &r.use_openers {
                 if !names.contains(u.as_str()) && !BUILTIN_OPENERS.contains(&u.as_str()) {
-                    return Err(SpecError::UnknownOpener { rule: i, name: u.clone() });
+                    return Err(SpecError::UnknownOpener {
+                        rule: i,
+                        name: u.clone(),
+                    });
                 }
             }
         }
@@ -98,65 +103,97 @@ impl Spec {
         let openers = vec![
             opener(
                 "terminal",
-                Some("Open a folder in a NEW ghostty window, cd'd into it (orphan detaches it so it survives yazi exiting)."),
+                Some(
+                    "Open a folder in a NEW ghostty window, cd'd into it (orphan detaches it so it survives yazi exiting).",
+                ),
                 r#"ghostty --working-directory "$1" >/dev/null 2>&1"#,
                 Some("Open in new ghostty"),
-                false, true, Some("linux"),
+                false,
+                true,
+                Some("linux"),
             ),
             opener(
                 "browser",
                 Some("Open web/HTML in Chromium."),
                 r#"chromium "$@""#,
                 Some("Chromium"),
-                false, true, Some("linux"),
+                false,
+                true,
+                Some("linux"),
             ),
             opener(
                 "edit",
                 Some("Open code/text in micro (block hands the terminal to micro)."),
                 r#"${EDITOR:-micro} "$@""#,
                 Some("micro"),
-                true, false, Some("unix"),
+                true,
+                false,
+                Some("unix"),
             ),
             opener(
                 "md-view",
-                Some("View rendered Markdown (images + big headers via ghostty graphics) with mdfried."),
+                Some(
+                    "View rendered Markdown (images + big headers via ghostty graphics) with mdfried.",
+                ),
                 r#"mdfried "$@""#,
                 Some("mdfried (rendered markdown)"),
-                true, false, Some("unix"),
+                true,
+                false,
+                Some("unix"),
             ),
             opener(
                 "docx",
                 Some("View Word .docx documents with doxx (terminal-native Word viewer)."),
                 r#"doxx "$@""#,
                 Some("doxx (Word viewer)"),
-                true, false, Some("unix"),
+                true,
+                false,
+                Some("unix"),
             ),
             opener(
                 "xlsx",
                 Some("View Excel .xlsx/.xls with xleak (-i = interactive TUI)."),
                 r#"xleak -i "$@""#,
                 Some("xleak (Excel viewer)"),
-                true, false, Some("unix"),
+                true,
+                false,
+                Some("unix"),
             ),
             opener(
                 "csv",
-                Some("View CSV with xan; -p pages via less (scrollable), -A lifts the 100-row cap."),
+                Some(
+                    "View CSV with xan; -p pages via less (scrollable), -A lifts the 100-row cap.",
+                ),
                 r#"xan view -p -A "$@""#,
                 Some("xan (CSV viewer)"),
-                true, false, Some("unix"),
+                true,
+                false,
+                Some("unix"),
             ),
             opener(
                 "env",
-                Some("Edit .env files with lazyenv (TUI). lazyenv scans a DIRECTORY, so open the hovered file's parent."),
+                Some(
+                    "Edit .env files with lazyenv (TUI). lazyenv scans a DIRECTORY, so open the hovered file's parent.",
+                ),
                 r#"lazyenv "$(dirname "$1")""#,
                 Some("lazyenv (.env TUI)"),
-                true, false, Some("unix"),
+                true,
+                false,
+                Some("unix"),
             ),
         ];
 
         let prepend_rules = vec![
-            rule_mime("inode/directory", &["terminal"], Some("directory -> new ghostty window")),
-            rule_url("*.md", &["md-view", "edit", "reveal"], Some("markdown -> mdfried (must precede text/*). Press O for micro.")),
+            rule_mime(
+                "inode/directory",
+                &["terminal"],
+                Some("directory -> new ghostty window"),
+            ),
+            rule_url(
+                "*.md",
+                &["md-view", "edit", "reveal"],
+                Some("markdown -> mdfried (must precede text/*). Press O for micro."),
+            ),
             rule_url("*.markdown", &["md-view", "edit", "reveal"], None),
             rule_mime("text/markdown", &["md-view", "edit", "reveal"], None),
             rule_mime(
@@ -173,13 +210,29 @@ impl Spec {
             rule_mime("application/vnd.ms-excel", &["xlsx", "reveal"], None),
             rule_url("*.xlsx", &["xlsx", "reveal"], None),
             rule_url("*.xls", &["xlsx", "reveal"], None),
-            rule_mime("text/csv", &["csv", "edit", "reveal"], Some("CSV -> xan (must precede text/*). Press O for micro.")),
+            rule_mime(
+                "text/csv",
+                &["csv", "edit", "reveal"],
+                Some("CSV -> xan (must precede text/*). Press O for micro."),
+            ),
             rule_url("*.csv", &["csv", "edit", "reveal"], None),
-            rule_url(".env", &["env", "edit", "reveal"], Some(".env files -> lazyenv (must precede text/*). Press O for micro.")),
+            rule_url(
+                ".env",
+                &["env", "edit", "reveal"],
+                Some(".env files -> lazyenv (must precede text/*). Press O for micro."),
+            ),
             rule_url(".env.*", &["env", "edit", "reveal"], None),
             rule_url("*.env", &["env", "edit", "reveal"], None),
-            rule_mime("text/html", &["browser", "edit", "reveal"], Some("web / html -> Chromium")),
-            rule_mime("application/xhtml+xml", &["browser", "edit", "reveal"], None),
+            rule_mime(
+                "text/html",
+                &["browser", "edit", "reveal"],
+                Some("web / html -> Chromium"),
+            ),
+            rule_mime(
+                "application/xhtml+xml",
+                &["browser", "edit", "reveal"],
+                None,
+            ),
             rule_url("*.html", &["browser", "edit", "reveal"], None),
             rule_url("*.htm", &["browser", "edit", "reveal"], None),
             rule_mime("text/*", &["edit", "reveal"], Some("code / text -> micro")),
@@ -192,7 +245,10 @@ impl Spec {
             rule_mime("inode/empty", &["edit", "reveal"], None),
         ];
 
-        Spec { openers, prepend_rules }
+        Spec {
+            openers,
+            prepend_rules,
+        }
     }
 }
 
@@ -313,9 +369,16 @@ impl RawSpec {
                 (None, None) => return Err(SpecError::EmptyMatcher(i)),
                 (Some(_), Some(_)) => return Err(SpecError::AmbiguousMatcher(i)),
             };
-            prepend_rules.push(OpenRule { matcher, use_openers: r.use_openers, doc: r.doc });
+            prepend_rules.push(OpenRule {
+                matcher,
+                use_openers: r.use_openers,
+                doc: r.doc,
+            });
         }
-        Ok(Spec { openers, prepend_rules })
+        Ok(Spec {
+            openers,
+            prepend_rules,
+        })
     }
 }
 
@@ -345,7 +408,12 @@ pub fn spec_to_file_string(spec: &Spec) -> anyhow::Result<String> {
                     Matcher::Mime(m) => (Some(m.clone()), None),
                     Matcher::Url(u) => (None, Some(u.clone())),
                 };
-                RawRule { mime, url, use_openers: r.use_openers.clone(), doc: r.doc.clone() }
+                RawRule {
+                    mime,
+                    url,
+                    use_openers: r.use_openers.clone(),
+                    doc: r.doc.clone(),
+                }
             })
             .collect(),
     };
@@ -365,13 +433,16 @@ mod tests {
 
     #[test]
     fn builtin_is_valid() {
-        Spec::builtin().validate().expect("built-in spec must validate");
+        Spec::builtin()
+            .validate()
+            .expect("built-in spec must validate");
     }
 
     #[test]
     fn builtin_rules_reference_known_openers() {
         let s = Spec::builtin();
-        let names: std::collections::HashSet<_> = s.openers.iter().map(|o| o.name.as_str()).collect();
+        let names: std::collections::HashSet<_> =
+            s.openers.iter().map(|o| o.name.as_str()).collect();
         for r in &s.prepend_rules {
             for u in &r.use_openers {
                 assert!(

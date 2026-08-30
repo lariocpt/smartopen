@@ -48,8 +48,9 @@ pub fn render_to_string(existing: Option<&str>, spec: &Spec) -> Result<String> {
     match existing {
         None => Ok(render::fragment(spec)),
         Some(text) => {
-            let mut doc: DocumentMut =
-                text.parse().context("existing yazi.toml is not valid TOML")?;
+            let mut doc: DocumentMut = text
+                .parse()
+                .context("existing yazi.toml is not valid TOML")?;
             doc.remove("opener");
             doc.remove("open");
             let base = doc.to_string();
@@ -84,7 +85,10 @@ pub fn apply(path: &Path, spec: &Spec, no_backup: bool, force: bool) -> Result<O
 
     let had_managed = existing.as_deref().is_some_and(has_managed_tables);
     if had_managed && !force {
-        return Err(ApplyError::ManagedConflict { path: path.display().to_string() }.into());
+        return Err(ApplyError::ManagedConflict {
+            path: path.display().to_string(),
+        }
+        .into());
     }
 
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
@@ -96,12 +100,22 @@ pub fn apply(path: &Path, spec: &Spec, no_backup: bool, force: bool) -> Result<O
     }
     atomic_write(path, &new_text)?;
 
-    Ok(if existing.is_some() { Outcome::Updated } else { Outcome::Created })
+    Ok(if existing.is_some() {
+        Outcome::Updated
+    } else {
+        Outcome::Created
+    })
 }
 
 pub(crate) fn backup(path: &Path) -> Result<PathBuf> {
-    let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-    let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("yazi.toml");
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("yazi.toml");
     let bak = path.with_file_name(format!("{name}.bak-{secs}"));
     fs::copy(path, &bak).with_context(|| format!("backing up to {}", bak.display()))?;
     Ok(bak)
@@ -113,7 +127,10 @@ pub(crate) fn atomic_write(path: &Path, content: &str) -> Result<()> {
         .filter(|p| !p.as_os_str().is_empty())
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
-    let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("yazi.toml");
+    let name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("yazi.toml");
     let tmp = parent.join(format!(".{name}.tmp-{}", std::process::id()));
     fs::write(&tmp, content).with_context(|| format!("writing {}", tmp.display()))?;
     fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))?;
