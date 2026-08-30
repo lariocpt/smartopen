@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::config::{CommandEntry, Config, ExtensionAssociation, FolderAssociation, MatchRule};
+use crate::platform::Host;
 
 #[derive(Debug, Clone)]
 pub struct Target {
@@ -17,9 +18,23 @@ pub struct Target {
     pub is_empty: bool,
 }
 
+/// Resolve to an absolute path with symlinks followed — the form every placeholder uses.
+/// On Windows `std::fs::canonicalize` returns `\\?\C:\…`, which most programs reject on
+/// their command line; `dunce` gives back the plain `C:\…` spelling wherever it is valid.
+fn canonicalize(path: &Path) -> std::io::Result<PathBuf> {
+    #[cfg(windows)]
+    {
+        dunce::canonicalize(path)
+    }
+    #[cfg(not(windows))]
+    {
+        fs::canonicalize(path)
+    }
+}
+
 impl Target {
     pub fn from_path(path: &Path) -> Result<Self> {
-        let path = fs::canonicalize(path)
+        let path = canonicalize(path)
             .with_context(|| format!("failed to resolve path {}", path.display()))?;
         let metadata = fs::metadata(&path)
             .with_context(|| format!("failed to read metadata for {}", path.display()))?;
@@ -58,41 +73,78 @@ impl Target {
     }
 }
 
+/// The commands offered for `target` on this machine: every matching association's
+/// commands, merged in config order, deduplicated by label, and without the ones marked
+/// for another platform.
 pub fn matching_commands(
     config: &Config,
     config_path: &Path,
     target: &Target,
+) -> Result<Vec<CommandEntry>> {
+    matching_commands_on(config, config_path, target, Host::current())
+}
+
+/// [`matching_commands`] for an explicit host, so the platform filter is testable anywhere.
+pub fn matching_commands_on(
+    config: &Config,
+    config_path: &Path,
+    target: &Target,
+    host: Host,
 ) -> Result<Vec<CommandEntry>> {
     let mut commands = Vec::new();
     let mut seen_labels = HashSet::new();
 
     for association in &config.extension {
         if matches_extension_association(association, target) {
-            push_unique_commands(&mut commands, &mut seen_labels, &association.commands);
+            push_unique_commands(&mut commands, &mut seen_labels, &association.commands, host);
         }
     }
 
     for association in &config.folder {
         if matches_folder_association(association, config_path, target)? {
-            push_unique_commands(&mut commands, &mut seen_labels, &association.commands);
+            push_unique_commands(&mut commands, &mut seen_labels, &association.commands, host);
         }
     }
 
     for association in &config.association {
         if matches_rule(&association.match_rule, target) {
-            push_unique_commands(&mut commands, &mut seen_labels, &association.commands);
+            push_unique_commands(&mut commands, &mut seen_labels, &association.commands, host);
         }
     }
 
     Ok(commands)
 }
 
+/// The shortcuts offered on this machine, in config order.
+pub fn shortcuts_here(config: &Config) -> Vec<CommandEntry> {
+    shortcuts_on(config, Host::current())
+}
+
+pub fn shortcuts_on(config: &Config, host: Host) -> Vec<CommandEntry> {
+    config
+        .shortcut
+        .iter()
+        .filter(|command| applies_on(command, host))
+        .cloned()
+        .collect()
+}
+
+fn applies_on(command: &CommandEntry, host: Host) -> bool {
+    command
+        .platform
+        .is_none_or(|platform| platform.applies_on(host))
+}
+
 fn push_unique_commands(
     commands: &mut Vec<CommandEntry>,
     seen_labels: &mut HashSet<String>,
     new_commands: &[CommandEntry],
+    host: Host,
 ) {
     for command in new_commands {
+        if !applies_on(command, host) {
+            continue;
+        }
         let label_key = command.label.to_lowercase();
         if seen_labels.insert(label_key) {
             commands.push(command.clone());
@@ -272,15 +324,20 @@ mod tests {
         Association, CommandEntry, Config, ExtensionAssociation, FolderAssociation, MatchRule,
         MenuConfig,
     };
+    use crate::platform::Platform;
 
     fn command(label: &str) -> CommandEntry {
         CommandEntry {
             label: label.to_string(),
-            description: String::new(),
-            icon: String::new(),
             run: format!("echo {label}"),
-            cwd: None,
-            detach: false,
+            ..CommandEntry::default()
+        }
+    }
+
+    fn command_for(label: &str, platform: Platform) -> CommandEntry {
+        CommandEntry {
+            platform: Some(platform),
+            ..command(label)
         }
     }
 
@@ -415,6 +472,55 @@ mod tests {
 
         assert_eq!(commands.len(), 1);
         assert_eq!(commands[0].label, "Project menu");
+    }
+
+    #[test]
+    fn commands_for_another_platform_are_not_offered() {
+        let mut config = config();
+        config.extension = vec![ExtensionAssociation {
+            extensions: vec!["jpg".to_string()],
+            names: Vec::new(),
+            commands: vec![
+                command("Everywhere"),
+                command_for("Finder", Platform::Macos),
+                command_for("Explorer", Platform::Windows),
+                command_for("xdg-open", Platform::Unix),
+            ],
+        }];
+        config.shortcut = vec![
+            command("Shell"),
+            command_for("PowerShell", Platform::Windows),
+        ];
+        let labels = |commands: Vec<CommandEntry>| {
+            commands
+                .into_iter()
+                .map(|command| command.label)
+                .collect::<Vec<_>>()
+        };
+
+        let on_mac = matching_commands_on(
+            &config,
+            Path::new("/tmp/config.toml"),
+            &file_target(),
+            Host::Macos,
+        )
+        .unwrap();
+        assert_eq!(labels(on_mac), ["Everywhere", "Finder", "xdg-open"]);
+
+        let on_windows = matching_commands_on(
+            &config,
+            Path::new("/tmp/config.toml"),
+            &file_target(),
+            Host::Windows,
+        )
+        .unwrap();
+        assert_eq!(labels(on_windows), ["Everywhere", "Explorer"]);
+
+        assert_eq!(labels(shortcuts_on(&config, Host::Linux)), ["Shell"]);
+        assert_eq!(
+            labels(shortcuts_on(&config, Host::Windows)),
+            ["Shell", "PowerShell"]
+        );
     }
 
     #[test]

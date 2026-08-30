@@ -6,6 +6,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::config::CommandEntry;
 use crate::matcher::Target;
+use crate::shell::Shell;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionPlan {
@@ -45,7 +46,7 @@ pub fn run_command(command: &CommandEntry, target: Option<&Target>) -> Result<()
         return spawn_detached(&plan, command);
     }
 
-    let mut process = shell_command(&plan.command);
+    let mut process = Shell::current().command(&plan.command);
     process
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
@@ -68,8 +69,11 @@ pub fn run_command(command: &CommandEntry, target: Option<&Target>) -> Result<()
 
 /// Launch a command fully in the background (GUI apps): no wait, no inherited stdio, so the
 /// menu returns immediately and a non-zero exit is not surfaced — the opener's `orphan`.
+///
+/// "Fully" means its own process group (Unix) or a detached console (Windows). Without
+/// that, closing the terminal that ran the menu takes the launched app down with it.
 fn spawn_detached(plan: &ExecutionPlan, command: &CommandEntry) -> Result<()> {
-    let mut process = shell_command(&plan.command);
+    let mut process = Shell::current().command(&plan.command);
     process
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -79,11 +83,31 @@ fn spawn_detached(plan: &ExecutionPlan, command: &CommandEntry) -> Result<()> {
         process.current_dir(cwd);
     }
 
+    detach_from_terminal(&mut process);
+
     process
         .spawn()
         .with_context(|| format!("failed to launch '{}'", command.label))?;
     Ok(())
 }
+
+#[cfg(unix)]
+fn detach_from_terminal(process: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    // A new process group: SIGHUP for the terminal's group no longer reaches the child.
+    process.process_group(0);
+}
+
+#[cfg(windows)]
+fn detach_from_terminal(process: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    process.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+}
+
+#[cfg(not(any(unix, windows)))]
+fn detach_from_terminal(_process: &mut Command) {}
 
 pub fn plan_command(command: &CommandEntry, target: Option<&Target>) -> Result<ExecutionPlan> {
     let command_line = render_command(command, target)?;
@@ -111,7 +135,17 @@ pub fn command_availability(command_line: &str) -> CommandAvailability {
     }
 }
 
+/// Substitute the target placeholders, quoted for the shell this OS runs commands through.
 pub fn render_command(command: &CommandEntry, target: Option<&Target>) -> Result<String> {
+    render_command_for(Shell::current(), command, target)
+}
+
+/// [`render_command`] for an explicit shell, so both quoting rules are testable anywhere.
+pub fn render_command_for(
+    shell: Shell,
+    command: &CommandEntry,
+    target: Option<&Target>,
+) -> Result<String> {
     let Some(target) = target else {
         if contains_path_placeholder(&command.run) {
             bail!(
@@ -123,13 +157,19 @@ pub fn render_command(command: &CommandEntry, target: Option<&Target>) -> Result
         return Ok(command.run.clone());
     };
 
+    let quote = |value: &str| {
+        shell
+            .quote(value)
+            .with_context(|| format!("cannot render command '{}'", command.label))
+    };
+
     Ok(command
         .run
-        .replace("{path}", &shell_quote_path(&target.path))
-        .replace("{dir}", &shell_quote_path(&target.dir))
-        .replace("{name}", &shell_quote(&target.name))
-        .replace("{stem}", &shell_quote(&target.stem))
-        .replace("{ext}", &shell_quote(&target.ext)))
+        .replace("{path}", &quote(&target.path.display().to_string())?)
+        .replace("{dir}", &quote(&target.dir.display().to_string())?)
+        .replace("{name}", &quote(&target.name)?)
+        .replace("{stem}", &quote(&target.stem)?)
+        .replace("{ext}", &quote(&target.ext)?))
 }
 
 fn expand_path(path: &str) -> Result<PathBuf> {
@@ -143,41 +183,6 @@ fn contains_path_placeholder(command: &str) -> bool {
     ["{path}", "{dir}", "{name}", "{stem}", "{ext}"]
         .iter()
         .any(|placeholder| command.contains(placeholder))
-}
-
-fn shell_command(command: &str) -> Command {
-    #[cfg(windows)]
-    {
-        let mut shell = Command::new("cmd");
-        shell.arg("/C").arg(command);
-        shell
-    }
-
-    #[cfg(not(windows))]
-    {
-        let mut shell = Command::new("sh");
-        shell.arg("-c").arg(command);
-        shell
-    }
-}
-
-fn shell_quote_path(path: &Path) -> String {
-    shell_quote(&path.display().to_string())
-}
-
-pub fn shell_quote(value: &str) -> String {
-    if value.is_empty() {
-        return "''".to_string();
-    }
-
-    if value
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'_' | b'-'))
-    {
-        return value.to_string();
-    }
-
-    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -272,11 +277,16 @@ fn next_shell_word(command_line: &str, start: usize) -> Option<(String, usize)> 
 }
 
 fn starts_with_shell_expansion(word: &str) -> bool {
-    word.starts_with('$') || word.starts_with('`')
+    word.starts_with('$') || word.starts_with('`') || is_cmd_variable(word)
 }
 
 fn contains_shell_expansion(word: &str) -> bool {
-    word.contains('$') || word.contains('`')
+    word.contains('$') || word.contains('`') || is_cmd_variable(word)
+}
+
+/// `%EDITOR%`-style cmd.exe expansion — only meaningful where cmd is the shell.
+fn is_cmd_variable(word: &str) -> bool {
+    cfg!(windows) && word.starts_with('%') && word.len() > 2 && word.ends_with('%')
 }
 
 fn is_env_assignment(word: &str) -> bool {
@@ -297,7 +307,7 @@ fn is_env_assignment(word: &str) -> bool {
         && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
-fn find_executable(executable: &str) -> Option<PathBuf> {
+pub fn find_executable(executable: &str) -> Option<PathBuf> {
     let executable_path = Path::new(executable);
     if executable_path.components().count() > 1 {
         return executable_path
@@ -306,9 +316,28 @@ fn find_executable(executable: &str) -> Option<PathBuf> {
     }
 
     let path = env::var_os("PATH")?;
+    let names = executable_names(executable);
     env::split_paths(&path)
-        .map(|directory| directory.join(executable))
+        .flat_map(|directory| names.iter().map(move |name| directory.join(name)))
         .find(|candidate| candidate.is_file())
+}
+
+/// The file names a bare command may resolve to. On Windows `xan` is `xan.exe` (or any
+/// other `PATHEXT` extension); everywhere else the name is the file name.
+fn executable_names(executable: &str) -> Vec<String> {
+    if !cfg!(windows) || Path::new(executable).extension().is_some() {
+        return vec![executable.to_string()];
+    }
+
+    let pathext = env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+    let mut names = vec![executable.to_string()];
+    names.extend(
+        pathext
+            .split(';')
+            .filter(|ext| !ext.is_empty())
+            .map(|ext| format!("{executable}{}", ext.to_lowercase())),
+    );
+    names
 }
 
 #[cfg(test)]
@@ -327,50 +356,67 @@ mod tests {
         }
     }
 
-    #[test]
-    fn render_command_quotes_path_placeholders() {
-        let command = CommandEntry {
+    fn command(run: &str) -> CommandEntry {
+        CommandEntry {
             label: "Open".to_string(),
-            description: String::new(),
-            icon: String::new(),
-            run: "vim {path}".to_string(),
-            cwd: None,
-            detach: false,
-        };
+            run: run.to_string(),
+            ..CommandEntry::default()
+        }
+    }
+
+    #[test]
+    fn posix_render_single_quotes_path_placeholders() {
         let target = target_with_path(PathBuf::from("/tmp/project dir/hello world.rs"));
 
-        let rendered = render_command(&command, Some(&target)).expect("command should render");
+        let rendered = render_command_for(Shell::Posix, &command("vim {path}"), Some(&target))
+            .expect("command should render");
 
         assert_eq!(rendered, "vim '/tmp/project dir/hello world.rs'");
     }
 
     #[test]
-    fn render_shortcut_rejects_path_placeholder() {
-        let command = CommandEntry {
-            label: "Bad shortcut".to_string(),
-            description: String::new(),
-            icon: String::new(),
-            run: "vim {path}".to_string(),
-            cwd: None,
-            detach: false,
-        };
+    fn cmd_render_double_quotes_path_placeholders() {
+        let mut target = target_with_path(PathBuf::from(r"C:\project dir\hello world.rs"));
+        target.dir = PathBuf::from(r"C:\project dir");
 
-        assert!(render_command(&command, None).is_err());
+        let rendered = render_command_for(
+            Shell::Cmd,
+            &command("micro {path} {dir} {name}"),
+            Some(&target),
+        )
+        .expect("command should render");
+
+        assert_eq!(
+            rendered,
+            r#"micro "C:\project dir\hello world.rs" "C:\project dir" "hello world.rs""#
+        );
+    }
+
+    #[test]
+    fn cmd_render_refuses_a_percent_in_the_path() {
+        let target = target_with_path(PathBuf::from(r"C:\100%\a.rs"));
+
+        let error = render_command_for(Shell::Cmd, &command("micro {path}"), Some(&target))
+            .expect_err("a % cannot be quoted for cmd");
+
+        assert!(error.to_string().contains("cannot render command 'Open'"));
+    }
+
+    #[test]
+    fn render_shortcut_rejects_path_placeholder() {
+        assert!(render_command_for(Shell::Posix, &command("vim {path}"), None).is_err());
     }
 
     #[test]
     fn render_command_preserves_shell_default_expansion() {
-        let command = CommandEntry {
-            label: "Edit".to_string(),
-            description: String::new(),
-            icon: String::new(),
-            run: "${EDITOR:-nano} {path}".to_string(),
-            cwd: None,
-            detach: false,
-        };
         let target = target_with_path(PathBuf::from("/tmp/file.rs"));
 
-        let rendered = render_command(&command, Some(&target)).expect("command should render");
+        let rendered = render_command_for(
+            Shell::Posix,
+            &command("${EDITOR:-nano} {path}"),
+            Some(&target),
+        )
+        .expect("command should render");
 
         assert_eq!(rendered, "${EDITOR:-nano} /tmp/file.rs");
     }
@@ -379,11 +425,9 @@ mod tests {
     fn plan_command_expands_cwd() {
         let command = CommandEntry {
             label: "Build".to_string(),
-            description: String::new(),
-            icon: String::new(),
             run: "cargo build".to_string(),
             cwd: Some(".".to_string()),
-            detach: false,
+            ..CommandEntry::default()
         };
 
         let plan = plan_command(&command, None).expect("command should plan");
@@ -429,7 +473,13 @@ mod tests {
     }
 
     #[test]
-    fn shell_quote_escapes_single_quotes() {
-        assert_eq!(shell_quote("it's here"), "'it'\\''s here'");
+    fn executable_names_add_pathext_only_on_windows() {
+        let names = executable_names("xan");
+        if cfg!(windows) {
+            assert!(names.iter().any(|name| name == "xan.exe"), "{names:?}");
+        } else {
+            assert_eq!(names, vec!["xan".to_string()]);
+        }
+        assert_eq!(executable_names("xan.exe"), vec!["xan.exe".to_string()]);
     }
 }

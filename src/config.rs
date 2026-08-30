@@ -3,8 +3,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
-use directories::BaseDirs;
 use serde::Deserialize;
+
+use crate::paths;
+use crate::platform::Platform;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -67,7 +69,7 @@ pub struct MatchRule {
     pub empty: Option<bool>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct CommandEntry {
     pub label: String,
     #[serde(default)]
@@ -81,20 +83,45 @@ pub struct CommandEntry {
     /// shouldn't block the menu or surface a non-zero exit (the opener's `orphan`).
     #[serde(default)]
     pub detach: bool,
+    /// Offer this command only on one platform (`unix`, `linux`, `macos`, `windows`), so a
+    /// single config can serve every machine. Absent means everywhere.
+    #[serde(default)]
+    pub platform: Option<Platform>,
+}
+
+impl CommandEntry {
+    /// Is this command for the OS the binary is running on?
+    pub fn applies_here(&self) -> bool {
+        self.platform.is_none_or(Platform::applies_here)
+    }
 }
 
 pub const DEFAULT_MENU_ART: &str = include_str!("../examples/art/default.txt");
-pub const SAMPLE_CONFIG: &str = include_str!("../examples/config.toml");
+
+pub const SAMPLE_CONFIG_LINUX: &str = include_str!("../examples/config.toml");
+pub const SAMPLE_CONFIG_MACOS: &str = include_str!("../examples/config-macos.toml");
+pub const SAMPLE_CONFIG_WINDOWS: &str = include_str!("../examples/config-windows.toml");
+
+/// The starter config for the OS this binary was built for. Each one names tools that
+/// exist there, so a fresh `--init-config` followed by `--doctor` is not a wall of red.
+pub const SAMPLE_CONFIG: &str = if cfg!(windows) {
+    SAMPLE_CONFIG_WINDOWS
+} else if cfg!(target_os = "macos") {
+    SAMPLE_CONFIG_MACOS
+} else {
+    SAMPLE_CONFIG_LINUX
+};
 
 pub fn default_config_path() -> Result<PathBuf> {
-    let base_dirs = BaseDirs::new().ok_or_else(|| anyhow!("could not determine home directory"))?;
-    Ok(base_dirs.config_dir().join("opn").join("config.toml"))
+    paths::config_path().ok_or_else(|| {
+        anyhow!("could not determine a config directory: set XDG_CONFIG_HOME or HOME (APPDATA on Windows)")
+    })
 }
 
 pub fn load_config(path: &Path) -> Result<Config> {
     if !path.exists() {
         bail!(
-            "no config found at {}\ncreate one with: opn --init-config",
+            "no config found at {}\ncreate one with: smartopen --init-config",
             path.display()
         );
     }
@@ -303,6 +330,9 @@ fn describe_command_details(command: &CommandEntry) -> String {
     if let Some(cwd) = &command.cwd {
         details.push(format!("cwd: {cwd}"));
     }
+    if let Some(platform) = command.platform {
+        details.push(format!("platform: {platform:?}").to_lowercase());
+    }
 
     format!(" ({})", details.join("; "))
 }
@@ -311,14 +341,47 @@ fn describe_command_details(command: &CommandEntry) -> String {
 mod tests {
     use super::*;
 
+    /// Every platform's sample parses on every platform, and each has something in every
+    /// section. Counts are deliberately not asserted: they differ per OS and drift with
+    /// every edit, which is how this test used to need patching alongside the sample.
     #[test]
-    fn sample_config_parses() {
-        let config: Config = toml::from_str(SAMPLE_CONFIG).expect("sample config should parse");
+    fn every_sample_config_parses_with_all_sections() {
+        for (name, text) in [
+            ("linux", SAMPLE_CONFIG_LINUX),
+            ("macos", SAMPLE_CONFIG_MACOS),
+            ("windows", SAMPLE_CONFIG_WINDOWS),
+        ] {
+            let config: Config =
+                toml::from_str(text).unwrap_or_else(|e| panic!("{name} sample: {e}"));
+            assert!(!config.extension.is_empty(), "{name}: no [[extension]]");
+            assert!(!config.folder.is_empty(), "{name}: no [[folder]]");
+            assert!(!config.association.is_empty(), "{name}: no [[association]]");
+            assert!(!config.shortcut.is_empty(), "{name}: no [[shortcut]]");
+        }
+    }
 
-        assert_eq!(config.extension.len(), 7);
-        assert_eq!(config.folder.len(), 1);
-        assert_eq!(config.association.len(), 2);
-        assert_eq!(config.shortcut.len(), 27);
+    #[test]
+    fn the_built_in_sample_is_the_one_for_this_os() {
+        let want = if cfg!(windows) {
+            SAMPLE_CONFIG_WINDOWS
+        } else if cfg!(target_os = "macos") {
+            SAMPLE_CONFIG_MACOS
+        } else {
+            SAMPLE_CONFIG_LINUX
+        };
+        assert_eq!(SAMPLE_CONFIG, want);
+    }
+
+    #[test]
+    fn command_platform_gates_where_it_applies() {
+        let everywhere = CommandEntry::default();
+        assert!(everywhere.applies_here());
+
+        let windows_only = CommandEntry {
+            platform: Some(Platform::Windows),
+            ..CommandEntry::default()
+        };
+        assert_eq!(windows_only.applies_here(), cfg!(windows));
     }
 
     #[test]

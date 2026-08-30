@@ -2,8 +2,11 @@ mod config;
 mod doctor;
 mod matcher;
 mod menu;
+mod paths;
+mod platform;
 mod render;
 mod runner;
+mod shell;
 mod tomlio;
 
 // The yazi/broot surface. Today only `--setup-yazi` reaches it, so the diff/check/print
@@ -26,9 +29,10 @@ use crate::config::{
     load_menu_art,
 };
 use crate::doctor::print_doctor;
-use crate::matcher::{Target, matching_commands};
+use crate::matcher::{Target, matching_commands, shortcuts_here};
 use crate::menu::select_command;
-use crate::runner::{plan_command, run_command, shell_quote};
+use crate::runner::{plan_command, run_command};
+use crate::shell::Shell;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -106,7 +110,8 @@ pub fn run() -> Result<()> {
             engine::Engine::Smartopen,
             "smartopen",
         );
-        let config_path = default_yazi_config_path()?;
+        let config_path =
+            paths::yazi_config_path().context("could not determine yazi's config directory")?;
         match tomlio::apply(&config_path, &effective, false, true)? {
             tomlio::Outcome::Created => println!("created {}", config_path.display()),
             tomlio::Outcome::Updated => println!("updated {}", config_path.display()),
@@ -153,14 +158,18 @@ pub fn run() -> Result<()> {
             }
         }
         None => {
-            if config.shortcut.is_empty() {
-                bail!("no shortcuts configured in {}", config_path.display());
+            let shortcuts = shortcuts_here(&config);
+            if shortcuts.is_empty() {
+                bail!(
+                    "no shortcuts configured for this platform in {}",
+                    config_path.display()
+                );
             }
 
             let menu_art = menu_art_for_selection(&config, &config_path, &cli.command)?;
             if let Some(command) = resolve_command(
                 "Choose a shortcut",
-                &config.shortcut,
+                &shortcuts,
                 &cli.command,
                 &menu_art,
                 None,
@@ -180,11 +189,6 @@ fn selected_config_path(path: Option<&Path>) -> Result<PathBuf> {
     }
 }
 
-fn default_yazi_config_path() -> Result<PathBuf> {
-    let bd = directories::BaseDirs::new().context("cannot determine home/config directory")?;
-    Ok(bd.config_dir().join("yazi").join("yazi.toml"))
-}
-
 fn expand_path(path: &Path) -> Result<PathBuf> {
     let path = path
         .to_str()
@@ -202,17 +206,21 @@ fn edit_config(path: &Path) -> Result<()> {
         println!("created {}", path.display());
     }
 
-    let run = format!(
-        "${{EDITOR:-nano}} {}",
-        shell_quote(&path.display().to_string())
-    );
+    let shell = Shell::current();
+    let quoted = shell.quote(&path.display().to_string())?;
+    // `${EDITOR:-nano}` is sh; cmd has no default-expansion syntax, so resolve the
+    // editor here and fall back to the one every Windows install has.
+    let run = match shell {
+        Shell::Posix => format!("${{EDITOR:-nano}} {quoted}"),
+        Shell::Cmd => {
+            let editor = std::env::var("EDITOR").unwrap_or_else(|_| "notepad".to_string());
+            format!("{editor} {quoted}")
+        }
+    };
     let command = CommandEntry {
         label: "Edit config".to_string(),
-        description: String::new(),
-        icon: String::new(),
         run,
-        cwd: None,
-        detach: false,
+        ..CommandEntry::default()
     };
 
     run_command(&command, None)
