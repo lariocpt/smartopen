@@ -1,6 +1,5 @@
 #![allow(unused)]
 
-
 mod config;
 mod diff;
 mod doctor;
@@ -69,8 +68,6 @@ struct Cli {
 
     #[arg(long, help = "Configure yazi to use smartopen for file associations")]
     setup_yazi: bool,
-
-
 }
 
 pub fn run() -> Result<()> {
@@ -99,17 +96,19 @@ pub fn run() -> Result<()> {
     }
 
     if cli.setup_yazi {
-        let effective = engine::effective(&spec::Spec::builtin(), engine::Engine::Smartopen, "smartopen");
+        let effective = engine::effective(
+            &spec::Spec::builtin(),
+            engine::Engine::Smartopen,
+            "smartopen",
+        );
         let config_path = default_yazi_config_path()?;
         match tomlio::apply(&config_path, &effective, false, true)? {
             tomlio::Outcome::Created => println!("created {}", config_path.display()),
             tomlio::Outcome::Updated => println!("updated {}", config_path.display()),
-            tomlio::Outcome::InSync => println!("already in sync: {}", config_path.display())
+            tomlio::Outcome::InSync => println!("already in sync: {}", config_path.display()),
         }
         return Ok(());
     }
-
-
 
     let config = load_config(&config_path)?;
 
@@ -175,8 +174,6 @@ fn selected_config_path(path: Option<&Path>) -> Result<PathBuf> {
         None => default_config_path(),
     }
 }
-
-
 
 fn default_yazi_config_path() -> Result<PathBuf> {
     let bd = directories::BaseDirs::new().context("cannot determine home/config directory")?;
