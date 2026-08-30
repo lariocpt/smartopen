@@ -1,7 +1,38 @@
 [package]
 name = "smartopen"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
+# let-chains (`if let … && …` in matcher.rs and menu.rs) stabilised in 1.88;
+# edition 2024 itself only needs 1.85.
+rust-version = "1.88"
+description = "Open files, folders and URLs through configurable command menus"
+license = "MIT"
+repository = "https://github.com/lariocpt/smartopen"
+homepage = "https://lariocpt.github.io/smartopen/"
+readme = "README.md"
+keywords = ["cli", "tui", "menu", "opener", "launcher"]
+categories = ["command-line-utilities"]
+# examples/ is NOT excluded: config.rs include_str!s the sample config and default art.
+exclude = [
+    "/.github",
+    "/.claude",
+    "/AGENTS.md",
+    "/CLAUDE.md",
+    "/docs",
+    "/Jenkinsfile",
+    "/scripts",
+    "/test",
+]
+
+# Two binaries, one program. `smartopen` is the name; `opn` is the three-character alias
+# that existing yazi/broot/niri configurations invoke. Both call `smartopen::run()`.
+[[bin]]
+name = "smartopen"
+path = "src/bin/smartopen.rs"
+
+[[bin]]
+name = "opn"
+path = "src/bin/opn.rs"
 
 [dependencies]
 anyhow = "1"
@@ -16,4 +47,7 @@ similar = "3.1.1"
 thiserror = "2.0.18"
 toml_edit = "0.25.12"
 
-
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
