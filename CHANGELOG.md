@@ -108,3 +108,16 @@ file manager, a shell keybinding, or the command line with one config.
   prints `[[shortcut]]` TOML — tags become groups, `<arg>` and `<arg=default>` become
   parameters, navi's `$ arg:` lines become `choices`, and a tldr page becomes a group
   gated on the program being installed. `--write` appends it to the config.
+- **Subcommands.** `smartopen config path|edit|init|sample|list|doctor`,
+  `smartopen yazi apply|diff|check|print|print-spec`, `smartopen broot apply|diff|check|print`,
+  plus `completions`, `man`, `shell` and `shortcuts import`. The old flags (`--doctor`,
+  `--setup-yazi`, …) still work, hidden. A file literally named `config`, `yazi` or another
+  subcommand needs a `./` prefix.
+- **broot integration is back.** `smartopen broot apply` writes an Enter verb (also
+  invocable as `:smartopen`) to `smartopen.hjson` and imports it from `conf.hjson`,
+  replacing a `yazi-opener-config` import if one is there. `--setup-broot` had been
+  removed; `niricritty`'s bake called it anyway and failed silently. It works again.
+- **The navigator config delegates to the binary that wrote it.** `opn yazi apply` produces
+  a `yazi.toml` that calls `opn`; `--bin` overrides. `--rules` writes explicit per-type
+  viewers from the built-in spec instead, `--spec` swaps in your own, and `--target`
+  points at a different `yazi.toml` or broot directory.

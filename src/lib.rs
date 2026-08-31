@@ -1,5 +1,8 @@
+mod broot;
 mod config;
+mod diff;
 mod doctor;
+mod engine;
 mod fuzzy;
 mod history;
 mod import;
@@ -7,6 +10,7 @@ mod launcher;
 mod matcher;
 mod menu;
 mod mime;
+mod navigators;
 mod params;
 mod paths;
 mod platform;
@@ -14,19 +18,10 @@ mod render;
 mod runner;
 mod shell;
 mod shell_widget;
+mod spec;
 mod target;
 mod terminal;
 mod tomlio;
-
-// The yazi/broot surface. Today only `--setup-yazi` reaches it, so the diff/check/print
-// paths are dead until they become `smartopen yazi …` subcommands; the allow is scoped
-// here, not crate-wide, so nothing else can hide behind it.
-#[allow(dead_code)]
-mod diff;
-#[allow(dead_code)]
-mod engine;
-#[allow(dead_code)]
-mod spec;
 
 use std::collections::BTreeMap;
 use std::io::{IsTerminal, Write};
@@ -45,6 +40,7 @@ use crate::import::Source;
 use crate::launcher::Context as WhenContext;
 use crate::matcher::{default_command, matching_commands, shortcuts_here};
 use crate::menu::select_command;
+use crate::navigators::{Action as NavAction, Navigator};
 use crate::params::TerminalPrompter;
 use crate::runner::{plan_command, run_command};
 use crate::shell::Shell;
@@ -67,13 +63,18 @@ struct Cli {
     )]
     targets: Vec<String>,
 
-    #[arg(long, value_name = "PATH", help = "Use a specific config file")]
-    config_path: Option<PathBuf>,
-
     #[arg(
         long,
-        help = "Print the config file path (and the project config, if one applies)"
+        global = true,
+        value_name = "PATH",
+        help = "Use a specific config file"
     )]
+    config_path: Option<PathBuf>,
+
+    // The flags below predate the subcommands and stay as hidden aliases so nothing that
+    // calls `--setup-yazi` or `--doctor` breaks. `smartopen config …` is the documented
+    // form.
+    #[arg(long, hide = true)]
     config: bool,
 
     #[arg(
@@ -110,28 +111,25 @@ struct Cli {
     #[arg(long, help = "Skip `confirm = true` prompts")]
     yes: bool,
 
-    #[arg(long, help = "Open the config in $EDITOR, creating it first if needed")]
+    #[arg(long, hide = true)]
     edit_config: bool,
 
-    #[arg(long, help = "List configured associations and shortcuts")]
+    #[arg(long, hide = true)]
     list: bool,
 
-    #[arg(long, help = "Check config, menu art, and command availability")]
+    #[arg(long, hide = true)]
     doctor: bool,
 
-    #[arg(
-        long,
-        help = "With --doctor: exit 1 when a command is missing (the default is to report and exit 0)"
-    )]
+    #[arg(long, hide = true)]
     strict: bool,
 
-    #[arg(long, help = "With --list or --doctor: print JSON instead of text")]
+    #[arg(long, hide = true)]
     json: bool,
 
-    #[arg(long, help = "Print a sample config")]
+    #[arg(long, hide = true)]
     sample_config: bool,
 
-    #[arg(long, help = "Create a starter config if one does not exist")]
+    #[arg(long, hide = true)]
     init_config: bool,
 
     #[arg(
@@ -154,12 +152,34 @@ struct Cli {
     )]
     no_history: bool,
 
-    #[arg(long, help = "Configure yazi to use smartopen for file associations")]
+    #[arg(long, hide = true)]
     setup_yazi: bool,
+
+    #[arg(long, hide = true)]
+    setup_broot: bool,
 }
 
 #[derive(Debug, Subcommand)]
 enum Subcommands {
+    /// Show, create, edit or check the config
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+    /// Make yazi open files through this menu ([opener]/[open] in yazi.toml)
+    Yazi {
+        #[command(subcommand)]
+        action: NavigatorAction,
+        #[command(flatten)]
+        opts: NavigatorOpts,
+    },
+    /// Make broot open files through this menu (an Enter verb in its config)
+    Broot {
+        #[command(subcommand)]
+        action: NavigatorAction,
+        #[command(flatten)]
+        opts: NavigatorOpts,
+    },
     /// Print a shell completion script (source it, or install it where the shell looks)
     Completions {
         #[arg(value_enum)]
@@ -177,6 +197,93 @@ enum Subcommands {
         #[command(subcommand)]
         action: ShortcutsAction,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum ConfigAction {
+    /// Print the config file path (and the project config, if one applies)
+    Path,
+    /// Open the config in $EDITOR, creating it first if needed
+    Edit,
+    /// Create a starter config if one does not exist
+    Init,
+    /// Print the starter config for this OS
+    Sample,
+    /// List configured associations and shortcuts
+    List {
+        #[arg(long, help = "Print JSON instead of text")]
+        json: bool,
+    },
+    /// Check the config, menu art, and whether each command's program is installed
+    Doctor {
+        #[arg(long, help = "Print JSON instead of text")]
+        json: bool,
+        #[arg(
+            long,
+            help = "Exit 1 when a command is missing (the default reports and exits 0)"
+        )]
+        strict: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum NavigatorAction {
+    /// Write the configuration (idempotent; the previous file is backed up first)
+    Apply {
+        /// Replace [opener]/[open] sections that were edited by hand (yazi)
+        #[arg(long)]
+        force: bool,
+        /// Do not back up the existing file
+        #[arg(long)]
+        no_backup: bool,
+    },
+    /// Show a unified diff of what `apply` would change
+    Diff,
+    /// Exit 0 if already in sync, 1 if `apply` would change something
+    Check,
+    /// Print the rendered configuration fragment
+    Print,
+    /// Print the built-in spec in editable form, for use with --spec
+    PrintSpec,
+}
+
+#[derive(Debug, clap::Args)]
+struct NavigatorOpts {
+    /// The binary the navigator delegates to (default: the one running now)
+    #[arg(long, global = true, value_name = "NAME")]
+    bin: Option<String>,
+    /// yazi.toml, or broot's config directory, instead of the platform default
+    #[arg(long, global = true, value_name = "PATH")]
+    target: Option<PathBuf>,
+    /// Explicit per-type viewers (the built-in spec) instead of delegating to the menu
+    #[arg(long, global = true)]
+    rules: bool,
+    /// An external spec file instead of the built-in one (see `print-spec`)
+    #[arg(long, global = true, value_name = "PATH")]
+    spec: Option<PathBuf>,
+}
+
+impl From<NavigatorAction> for NavAction {
+    fn from(action: NavigatorAction) -> Self {
+        match action {
+            NavigatorAction::Apply { force, no_backup } => NavAction::Apply { force, no_backup },
+            NavigatorAction::Diff => NavAction::Diff,
+            NavigatorAction::Check => NavAction::Check,
+            NavigatorAction::Print => NavAction::Print,
+            NavigatorAction::PrintSpec => NavAction::PrintSpec,
+        }
+    }
+}
+
+impl From<NavigatorOpts> for navigators::Options {
+    fn from(opts: NavigatorOpts) -> Self {
+        navigators::Options {
+            bin: opts.bin,
+            target: opts.target,
+            rules: opts.rules,
+            spec: opts.spec,
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -207,12 +314,49 @@ pub fn main_exit_code() -> i32 {
 
 pub fn run() -> Result<i32> {
     let cli = Cli::parse();
+    let config_path = selected_config_path(cli.config_path.as_deref())?;
 
     if let Some(subcommand) = cli.subcommand {
-        return run_subcommand(subcommand);
+        return run_subcommand(subcommand, &config_path, cli.no_project);
     }
 
-    let config_path = selected_config_path(cli.config_path.as_deref())?;
+    // The hidden legacy flags map onto the subcommands they became.
+    let legacy = if cli.config {
+        Some(ConfigAction::Path)
+    } else if cli.sample_config {
+        Some(ConfigAction::Sample)
+    } else if cli.init_config {
+        Some(ConfigAction::Init)
+    } else if cli.edit_config {
+        Some(ConfigAction::Edit)
+    } else if cli.list {
+        Some(ConfigAction::List { json: cli.json })
+    } else if cli.doctor {
+        Some(ConfigAction::Doctor {
+            json: cli.json,
+            strict: cli.strict,
+        })
+    } else {
+        None
+    };
+    if let Some(action) = legacy {
+        return run_config_action(action, &config_path, cli.no_project);
+    }
+    if cli.setup_yazi || cli.setup_broot {
+        let navigator = if cli.setup_yazi {
+            Navigator::Yazi
+        } else {
+            Navigator::Broot
+        };
+        return navigators::run(
+            navigator,
+            NavAction::Apply {
+                force: true,
+                no_backup: false,
+            },
+            &navigators::Options::default(),
+        );
+    }
 
     // Targets are resolved before the config loads: a target's directory is one of the
     // places a project config is searched for.
@@ -227,76 +371,7 @@ pub fn run() -> Result<i32> {
         .map(|target| target.dir.clone())
         .collect();
     let project_path = discover_project(cli.no_project, &target_dirs);
-
-    if cli.config {
-        println!("{}", config_path.display());
-        if let Some(project) = &project_path {
-            println!("project: {}", project.display());
-        }
-        return Ok(0);
-    }
-
-    if cli.sample_config {
-        print!("{SAMPLE_CONFIG}");
-        return Ok(0);
-    }
-
-    if cli.init_config {
-        init_config(&config_path)?;
-        println!("created {}", config_path.display());
-        return Ok(0);
-    }
-
-    if cli.edit_config {
-        return edit_config(&config_path);
-    }
-
-    if cli.setup_yazi {
-        let effective = engine::effective(
-            &spec::Spec::builtin(),
-            engine::Engine::Smartopen,
-            "smartopen",
-        );
-        let config_path =
-            paths::yazi_config_path().context("could not determine yazi's config directory")?;
-        match tomlio::apply(&config_path, &effective, false, true)? {
-            tomlio::Outcome::Created => println!("created {}", config_path.display()),
-            tomlio::Outcome::Updated => println!("updated {}", config_path.display()),
-            tomlio::Outcome::InSync => println!("already in sync: {}", config_path.display()),
-        }
-        return Ok(0);
-    }
-
     let config = load_effective_config(&config_path, project_path.as_deref())?;
-
-    if cli.list {
-        if cli.json {
-            let listing = serde_json::json!({
-                "config_path": config_path.display().to_string(),
-                "config": config,
-            });
-            println!("{}", serde_json::to_string_pretty(&listing)?);
-        } else {
-            print!("{}", describe_config(&config, &config_path));
-        }
-        return Ok(0);
-    }
-
-    if cli.doctor {
-        let report = diagnose(&config, &config_path);
-        if cli.json {
-            println!("{}", serde_json::to_string_pretty(&report)?);
-        } else {
-            print!("{}", render_text(&report));
-        }
-        // A missing tool is a finding, not a failure: the config may name optional
-        // viewers on purpose. --strict is for scripts that want the exit code to say.
-        return Ok(if cli.strict && report.problems > 0 {
-            1
-        } else {
-            0
-        });
-    }
 
     let mut history = if cli.no_history {
         History::disabled()
@@ -467,22 +542,75 @@ fn load_effective_config(config_path: &Path, project_path: Option<&Path>) -> Res
     Ok(merge_project(base, project, project_path))
 }
 
-fn run_subcommand(subcommand: Subcommands) -> Result<i32> {
+/// `smartopen config …`, and the hidden legacy flags that map onto it.
+fn run_config_action(action: ConfigAction, config_path: &Path, no_project: bool) -> Result<i32> {
+    match action {
+        ConfigAction::Path => {
+            println!("{}", config_path.display());
+            if let Some(project) = discover_project(no_project, &[]) {
+                println!("project: {}", project.display());
+            }
+            Ok(0)
+        }
+        ConfigAction::Sample => {
+            print!("{SAMPLE_CONFIG}");
+            Ok(0)
+        }
+        ConfigAction::Init => {
+            init_config(config_path)?;
+            println!("created {}", config_path.display());
+            Ok(0)
+        }
+        ConfigAction::Edit => edit_config(config_path),
+        ConfigAction::List { json } => {
+            let project_path = discover_project(no_project, &[]);
+            let config = load_effective_config(config_path, project_path.as_deref())?;
+            if json {
+                let listing = serde_json::json!({
+                    "config_path": config_path.display().to_string(),
+                    "project_path": project_path.as_ref().map(|p| p.display().to_string()),
+                    "config": config,
+                });
+                println!("{}", serde_json::to_string_pretty(&listing)?);
+            } else {
+                print!("{}", describe_config(&config, config_path));
+            }
+            Ok(0)
+        }
+        ConfigAction::Doctor { json, strict } => {
+            let project_path = discover_project(no_project, &[]);
+            let config = load_effective_config(config_path, project_path.as_deref())?;
+            let report = diagnose(&config, config_path);
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                print!("{}", render_text(&report));
+            }
+            // A missing tool is a finding, not a failure: the config may name optional
+            // viewers on purpose. --strict is for scripts that want the exit code to say.
+            Ok(if strict && report.problems > 0 { 1 } else { 0 })
+        }
+    }
+}
+
+fn run_subcommand(subcommand: Subcommands, config_path: &Path, no_project: bool) -> Result<i32> {
     // Completions and the man page name whichever binary was invoked, so `opn
     // completions zsh` completes `opn`.
-    let bin_name = std::env::args()
-        .next()
-        .and_then(|arg0| {
-            Path::new(&arg0)
-                .file_stem()
-                .map(|stem| stem.to_string_lossy().into_owned())
-        })
-        .unwrap_or_else(|| "smartopen".to_string());
+    let bin_name = navigators::current_bin_name();
     // clap wants a 'static name; one small leak at process start is the idiom.
     let bin_name: &'static str = Box::leak(bin_name.into_boxed_str());
     let mut command = Cli::command().name(bin_name);
 
     match subcommand {
+        Subcommands::Config { action } => {
+            return run_config_action(action, config_path, no_project);
+        }
+        Subcommands::Yazi { action, opts } => {
+            return navigators::run(Navigator::Yazi, action.into(), &opts.into());
+        }
+        Subcommands::Broot { action, opts } => {
+            return navigators::run(Navigator::Broot, action.into(), &opts.into());
+        }
         Subcommands::Completions { shell } => {
             clap_complete::generate(shell, &mut command, bin_name, &mut std::io::stdout());
         }
