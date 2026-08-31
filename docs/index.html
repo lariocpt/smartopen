@@ -161,13 +161,16 @@ smartopen wizard</code></pre>
 ├ Items (3) ────────────────┤ │ Rendered view in glow             │
 │<span class="k">&gt; 1  [md]   Render Markdown</span>│ │                                   │
 │  2  [edit] Edit           │ │ Command                           │
-│  3  [finder] Reveal       │ │ glow -p '/home/u/docs/notes.md'   │
+│  3  [finder] Reveal       │ │ glow -p /home/u/docs/notes.md     │
 │                           │ │                                   │
 │                           │ │ Executable                        │
 │                           │ │ glow: found at /usr/bin/glow      │
 │                           │ │                                   │
 │                           │ │ Target                            │
-│                           │ │ type: file · mime: text/markdown  │
+│                           │ │ /home/u/docs/notes.md             │
+│                           │ │ type: file                        │
+│                           │ │ extension: md                     │
+│                           │ │ mime: text/markdown               │
 └───────────────────────────┘ └───────────────────────────────────┘
  type to filter · ↑↓ move · 1-9 pick · Alt+key · Enter run · Esc</code></pre>
       <ul>
@@ -231,7 +234,7 @@ cwd      = "."             <span class="c"># alacritty, wezterm, Terminal.app, w
       <div class="card"><h3>Several at once</h3><p><code>smartopen a.csv b.csv</code> offers only the commands every target matches; <code>{paths}</code> is all of them, each quoted.</p></div>
       <div class="card"><h3>Project configs</h3><p>A <code>.smartopen.toml</code> above the working directory or the target — stopping at <code>.git</code> — layers its shortcuts first. A repo can ship its own.</p></div>
       <div class="card"><h3>One config, three OSes</h3><p><code>platform = "macos"</code> on any command keeps it off the menu elsewhere. Placeholders are quoted for <code>sh</code> or <code>cmd</code>, whichever will run them.</p></div>
-      <div class="card"><h3>Honest tooling</h3><p><code>config doctor</code> says which programs are missing (and exits 0 unless <code>--strict</code>); a misspelt key is an error naming the valid ones; <code>--json</code> everywhere scripts need it.</p></div>
+      <div class="card"><h3>Honest tooling</h3><p><code>config doctor</code> says which programs are missing (and exits 0 unless <code>--strict</code>); a misspelt key is an error naming the valid ones; <code>--json</code> on <code>config list</code>, <code>config doctor</code> and <code>tools list</code>.</p></div>
     </div>
   </div>
 </section>

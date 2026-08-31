@@ -36,7 +36,9 @@ $ smartopen notes.md
 │                           │ │                                        │
 │                           │ │ Target                                 │
 │                           │ │ /home/u/docs/notes.md                  │
-│                           │ │ type: file · mime: text/markdown       │
+│                           │ │ type: file                             │
+│                           │ │ extension: md                          │
+│                           │ │ mime: text/markdown                    │
 └───────────────────────────┘ └────────────────────────────────────────┘
  type to filter · ↑↓ move · 1-9 pick · Alt+key · Enter run · Esc cancel
 ```
@@ -124,7 +126,9 @@ they are missing — then walks popular file types one checklist at a time, with
 terminal tools that open them: ✓ installed, ↓ would be installed, ✗ not installable here.
 Before anything is written or run it shows the exact TOML and the exact package-manager
 commands; installs default to **no**. It is also offered automatically the first time you
-run `smartopen` without a config.
+run `smartopen` without a config. Whatever you tick, the config it writes also answers a
+URL (`[[url]]`), a script by its shebang, any other text file and an empty one — the same
+baseline `config init` gives.
 
 ```sh
 smartopen wizard --dry-run      # just the review

@@ -31,7 +31,7 @@ pipeline {
     triggers { cron('H/15 * * * *') }
     parameters {
         string(name: 'TAG', defaultValue: '',
-               description: 'Release tag to mirror, e.g. v0.2.0 (or v0.3.0-rc.1 to rehearse). Empty = whatever GitHub calls latest.')
+               description: 'Release tag to mirror, e.g. v0.2.0 (or v0.3.0-rc.1 to rehearse — apps-publish repoints the plane\'s latest at it until the next poll finds a final release). Empty = whatever GitHub calls latest.')
         booleanParam(name: 'FORCE', defaultValue: false,
                description: 'Republish even if this version is already on the plane.')
         booleanParam(name: 'PROVENANCE', defaultValue: true,
@@ -62,9 +62,9 @@ pipeline {
                     // The /releases/latest redirect lands on /releases/tag/vX.Y.Z and
                     // excludes drafts and prereleases — exactly the set to mirror. With no
                     // release yet it lands on /releases and the tag comes back as
-                    // "releases"; while the repository is private it is a 404 and comes
-                    // back empty. Both are a quiet NOT_BUILT, not an error, for the same
-                    // reason as above.
+                    // "releases"; while the repository is private it is a 404, and curl's
+                    // url_effective is then the URL asked for, so it comes back as "latest".
+                    // Both are a quiet NOT_BUILT, not an error, for the same reason as above.
                     env.TAG = params.TAG?.trim() ?: sh(returnStdout: true, script: '''
                         url=$(curl -fsS -o /dev/null -w '%{url_effective}' -L -I \
                               "https://github.com/${GH_REPO}/releases/latest" || true)
