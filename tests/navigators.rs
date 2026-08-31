@@ -100,6 +100,8 @@ impl Sandbox {
         cmd.env("XDG_STATE_HOME", self.path().join("state"));
         cmd.env("XDG_DATA_HOME", self.path().join("data"));
         cmd.env("XDG_CACHE_HOME", self.path().join("cache"));
+        // broot does not follow XDG on macOS; this is the override it honours everywhere.
+        cmd.env("BROOT_CONFIG_DIR", self.config_dir().join("broot"));
         cmd.env("TERM", "xterm-256color");
         cmd.env("TERMINAL", self.bin_dir().join("faketerm"));
         cmd.env("SMARTOPEN_TEST_OUT", self.out_file());
@@ -326,6 +328,7 @@ fn enter_in_broot_runs_the_matched_command_through_smartopen() {
     // Without this, a fresh broot asks about installing its shell function first.
     let status = StdCommand::new("broot")
         .args(["--set-install-state", "refused"])
+        .env("BROOT_CONFIG_DIR", &broot_dir)
         .env("XDG_CONFIG_HOME", sandbox.config_dir())
         .env("XDG_DATA_HOME", sandbox.path().join("data"))
         .env("HOME", sandbox.path())

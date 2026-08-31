@@ -38,7 +38,11 @@ path = "src/bin/opn.rs"
 [dependencies]
 anyhow = "1"
 clap = { version = "4.5", features = ["derive", "env"] }
-crossterm = "0.28"
+# use-dev-tty: read keys from /dev/tty through poll(2), not mio. On macOS mio cannot
+# poll /dev/tty (kqueue), and the shell widget runs the picker inside `$(…)`, so stdin
+# is not the terminal — without this the picker dies with "Failed to initialize input
+# reader" there. Found by the macOS navigator test.
+crossterm = { version = "0.28", features = ["use-dev-tty", "events"] }
 ratatui = "0.29"
 serde = { version = "1", features = ["derive"] }
 shellexpand = "3.1"
