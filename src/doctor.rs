@@ -1,6 +1,7 @@
 use anyhow::{Result, bail};
 
 use crate::config::{CommandEntry, Config, load_menu_art};
+use crate::platform::Host;
 use crate::runner::{CommandAvailability, command_availability};
 use std::path::Path;
 
@@ -8,6 +9,7 @@ pub fn print_doctor(config: &Config, config_path: &Path) -> Result<()> {
     let mut problems = 0;
 
     println!("Config: {}", config_path.display());
+    println!("Platform: {}", Host::current().name());
 
     match load_menu_art(config, config_path) {
         Ok(art) if art.trim().is_empty() => println!("Menu art: empty"),
@@ -21,6 +23,19 @@ pub fn print_doctor(config: &Config, config_path: &Path) -> Result<()> {
     println!();
     println!("Commands:");
     for report in command_reports(config) {
+        // A command for another OS is neither a problem nor something to look up on
+        // this PATH; say why it is skipped so a shared config stays readable here.
+        if let Some(platform) = report.command.platform
+            && !report.command.applies_here()
+        {
+            println!(
+                "  {} - skipped (platform: {})",
+                report.context,
+                platform_name(platform)
+            );
+            continue;
+        }
+
         let status = command_availability(&report.command.run);
         if status.is_problem() {
             problems += 1;
@@ -37,6 +52,16 @@ pub fn print_doctor(config: &Config, config_path: &Path) -> Result<()> {
 
     println!("Doctor: {problems} problem(s)");
     bail!("doctor found {problems} problem(s)")
+}
+
+fn platform_name(platform: crate::platform::Platform) -> &'static str {
+    use crate::platform::Platform;
+    match platform {
+        Platform::Unix => "unix",
+        Platform::Linux => "linux",
+        Platform::Macos => "macos",
+        Platform::Windows => "windows",
+    }
 }
 
 struct CommandReport<'a> {

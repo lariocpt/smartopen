@@ -1,0 +1,190 @@
+# smartopen example config — Windows
+#
+# Commands run through `cmd /C`, so this file speaks cmd: `start "" <path>` opens the
+# default app (the empty "" is the window title `start` insists on), `explorer` reveals,
+# and there is no `${EDITOR:-…}` — name the editor. Placeholders are double-quoted for
+# cmd automatically, so `{path}` is safe with spaces. This is the config
+# `smartopen --init-config` writes on Windows; the Linux and macOS ones live beside it.
+
+# [menu]
+# art_file = "art/default.txt"
+
+[[folder]]
+
+[[folder.command]]
+label = "Open in Windows Terminal"
+description = "New Windows Terminal tab in this folder"
+icon = "[term]"
+run = "wt -d {path}"
+detach = true
+
+[[folder.command]]
+label = "Open in Editor"
+description = "Open the folder in micro"
+icon = "[edit]"
+run = "micro {path}"
+
+[[folder.command]]
+label = "Yazi"
+description = "Browse the folder in yazi"
+icon = "[yazi]"
+run = "yazi {path}"
+
+[[folder.command]]
+label = "Broot"
+description = "Browse the folder in broot"
+icon = "[broot]"
+run = "broot {path}"
+
+[[folder.command]]
+label = "Git UI"
+description = "gitui in this folder"
+icon = "[git]"
+run = "cd /d {path} && gitui"
+
+[[folder.command]]
+label = "Open in Explorer"
+description = "Show the folder in File Explorer"
+icon = "[explorer]"
+run = "explorer {path}"
+detach = true
+
+[[extension]]
+extensions = ["md", "markdown"]
+
+[[extension.command]]
+label = "Render Markdown"
+description = "Rendered view in glow"
+icon = "[md]"
+run = "glow -p {path}"
+
+[[extension.command]]
+label = "Edit"
+description = "Open in micro"
+icon = "[edit]"
+run = "micro {path}"
+
+[[extension.command]]
+label = "Open in default app"
+description = "Whatever Windows has associated with .md"
+icon = "[open]"
+run = "start \"\" {path}"
+detach = true
+
+[[extension]]
+extensions = ["docx", "xlsx", "xls", "pptx", "pdf"]
+
+[[extension.command]]
+label = "Open in default app"
+description = "Word / Excel / PowerPoint / your PDF viewer"
+icon = "[open]"
+run = "start \"\" {path}"
+detach = true
+
+[[extension.command]]
+label = "Show in Explorer"
+description = "Select the file in File Explorer"
+icon = "[explorer]"
+run = "explorer /select,{path}"
+detach = true
+
+[[extension]]
+extensions = ["csv", "tsv"]
+
+[[extension.command]]
+label = "View CSV with xan"
+description = "Paged table view; -A lifts the row cap"
+icon = "[xan]"
+run = "xan view -p -A {path}"
+
+[[extension.command]]
+label = "Open in csvi"
+description = "Spreadsheet-style terminal editor"
+icon = "[csv]"
+run = "csvi {path}"
+
+[[extension.command]]
+label = "Open in default app"
+description = "Excel, usually"
+icon = "[open]"
+run = "start \"\" {path}"
+detach = true
+
+[[extension]]
+extensions = ["html", "htm"]
+
+[[extension.command]]
+label = "Open in browser"
+description = "Default browser"
+icon = "[web]"
+run = "start \"\" {path}"
+detach = true
+
+[[extension.command]]
+label = "Edit"
+description = "Open in micro"
+icon = "[edit]"
+run = "micro {path}"
+
+[[association]]
+
+[association.match]
+extensions = ["txt", "json", "yaml", "yml", "toml", "rs", "py", "js", "ts", "ps1", "bat", "cmd", "go", "c", "h", "cpp", "java", "cs", "lua", "css", "xml", "ini", "conf", "cfg", "log", "sql"]
+dirs = false
+
+[[association.command]]
+label = "Edit"
+description = "Open in micro"
+icon = "[edit]"
+run = "micro {path}"
+
+[[association.command]]
+label = "Open in Notepad"
+description = "Always there"
+icon = "[notepad]"
+run = "notepad {path}"
+detach = true
+
+[[association.command]]
+label = "Show in Explorer"
+description = "Select the file in File Explorer"
+icon = "[explorer]"
+run = "explorer /select,{path}"
+detach = true
+
+[[shortcut]]
+label = "Editor"
+description = "Open micro here"
+icon = "[edit]"
+run = "micro"
+
+[[shortcut]]
+label = "PowerShell"
+description = "A fresh PowerShell"
+icon = "[ps]"
+run = "pwsh"
+
+[[shortcut]]
+label = "Yazi"
+description = "File manager in the home directory"
+icon = "[yazi]"
+run = "yazi %USERPROFILE%"
+
+[[shortcut]]
+label = "Broot"
+description = "Tree navigator in the home directory"
+icon = "[broot]"
+run = "broot %USERPROFILE%"
+
+[[shortcut]]
+label = "gitui"
+description = "Git in the current directory"
+icon = "[git]"
+run = "gitui"
+
+[[shortcut]]
+label = "Cargo test"
+description = "Run the Rust test suite here"
+icon = "[test]"
+run = "cargo test"
+cwd = "."

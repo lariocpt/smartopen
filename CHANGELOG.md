@@ -28,3 +28,20 @@ file manager, a shell keybinding, or the command line with one config.
 ### Added
 
 - `LICENSE` (MIT) and this changelog.
+- **Runs on macOS and Windows as well as Linux.** Command lines are quoted for the shell
+  that will run them: `sh` gets `'…'`, `cmd.exe` gets `"…"` with embedded quotes doubled,
+  and a value cmd cannot carry (a `%`, a newline) is refused rather than mangled. Target
+  paths on Windows stay `C:\…` instead of the `\\?\C:\…` form most programs reject.
+  `detach = true` now really detaches — its own process group on Unix, a detached console
+  on Windows — so closing the terminal no longer takes the launched app with it. Looking
+  up a bare command name honours `PATHEXT` on Windows.
+- **Config lives in `~/.config/smartopen/` on macOS too**, not `~/Library/Application
+  Support`: `$XDG_CONFIG_HOME` then `~/.config` on every Unix, `%APPDATA%` on Windows. A
+  legacy `~/.config/opn/config.toml` is still honoured when that is all there is. yazi's
+  and broot's paths resolve by the same rule, including their Windows locations.
+- **`platform = "unix" | "linux" | "macos" | "windows"` on any command**, so one config
+  can serve every machine: a command for another OS is neither offered nor reported by
+  `--doctor`. The vocabulary is yazi's `for` field.
+- **A starter config per OS.** `--init-config` writes a Linux, macOS or Windows sample
+  whose tools exist there (`open -R`, `start ""`, `explorer /select,` …), so a fresh
+  install followed by `--doctor` is not a wall of red.

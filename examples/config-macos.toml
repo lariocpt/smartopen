@@ -1,0 +1,237 @@
+# smartopen example config — macOS
+#
+# Terminal-first associations, with Finder and the default app one keystroke away. This
+# is the config `smartopen --init-config` writes on macOS; the Linux and Windows ones live
+# beside it. Commands run through `sh -c`, so `${EDITOR:-micro}` works as it would in a
+# terminal. A `platform = "macos"` marker is not needed here because the whole file is
+# macOS-specific; use it when one config is shared across machines.
+
+# [menu]
+# art_file = "art/default.txt"
+
+[[folder]]
+
+[[folder.command]]
+label = "Open in Terminal"
+description = "New Terminal window in this folder"
+icon = "[term]"
+run = "open -a Terminal {path}"
+detach = true
+
+[[folder.command]]
+label = "Open in Editor"
+description = "Open the folder in $EDITOR"
+icon = "[edit]"
+run = "${EDITOR:-micro} {path}"
+
+[[folder.command]]
+label = "Yazi"
+description = "Browse the folder in yazi"
+icon = "[yazi]"
+run = "yazi {path}"
+
+[[folder.command]]
+label = "Broot"
+description = "Browse the folder in broot"
+icon = "[broot]"
+run = "broot {path}"
+
+[[folder.command]]
+label = "Git UI"
+description = "gitui in this folder"
+icon = "[git]"
+run = "sh -c 'cd \"$1\" && gitui' _ {path}"
+
+[[folder.command]]
+label = "Reveal in Finder"
+description = "Show the folder in Finder"
+icon = "[finder]"
+run = "open {path}"
+detach = true
+
+[[extension]]
+extensions = ["md", "markdown"]
+
+[[extension.command]]
+label = "Render Markdown"
+description = "Rendered view in glow"
+icon = "[md]"
+run = "glow -p {path}"
+
+[[extension.command]]
+label = "Edit"
+description = "Open in $EDITOR"
+icon = "[edit]"
+run = "${EDITOR:-micro} {path}"
+
+[[extension.command]]
+label = "Reveal in Finder"
+description = "Select the file in Finder"
+icon = "[finder]"
+run = "open -R {path}"
+detach = true
+
+[[extension]]
+extensions = ["docx"]
+
+[[extension.command]]
+label = "View Word document"
+description = "Terminal Word viewer (doxx)"
+icon = "[docx]"
+run = "doxx {path}"
+
+[[extension.command]]
+label = "Open in default app"
+description = "Pages / Word, whichever is the default"
+icon = "[open]"
+run = "open {path}"
+detach = true
+
+[[extension]]
+extensions = ["xlsx", "xls"]
+
+[[extension.command]]
+label = "View spreadsheet"
+description = "Terminal Excel viewer (xleak)"
+icon = "[xlsx]"
+run = "xleak -i {path}"
+
+[[extension.command]]
+label = "Open in default app"
+description = "Numbers / Excel, whichever is the default"
+icon = "[open]"
+run = "open {path}"
+detach = true
+
+[[extension]]
+extensions = ["csv", "tsv"]
+
+[[extension.command]]
+label = "View CSV with xan"
+description = "Paged table view; -A lifts the row cap"
+icon = "[xan]"
+run = "xan view -p -A {path}"
+
+[[extension.command]]
+label = "Open in csvi"
+description = "Spreadsheet-style terminal editor"
+icon = "[csv]"
+run = "csvi {path}"
+
+[[extension.command]]
+label = "Edit"
+description = "Open in $EDITOR"
+icon = "[edit]"
+run = "${EDITOR:-micro} {path}"
+
+[[association]]
+
+[association.match]
+names = [".env"]
+name_patterns = [".env.*", "*.env"]
+dirs = false
+
+[[association.command]]
+label = "Edit env"
+description = "lazyenv scans the containing directory"
+icon = "[env]"
+run = "lazyenv {dir}"
+
+[[association.command]]
+label = "Edit"
+description = "Open in $EDITOR"
+icon = "[edit]"
+run = "${EDITOR:-micro} {path}"
+
+[[extension]]
+extensions = ["html", "htm"]
+
+[[extension.command]]
+label = "Open in browser"
+description = "Default browser"
+icon = "[web]"
+run = "open {path}"
+detach = true
+
+[[extension.command]]
+label = "Open in Lynx"
+description = "Text-mode browser"
+icon = "[lynx]"
+run = "lynx {path}"
+
+[[extension.command]]
+label = "Edit"
+description = "Open in $EDITOR"
+icon = "[edit]"
+run = "${EDITOR:-micro} {path}"
+
+[[extension]]
+extensions = ["sql"]
+
+[[extension.command]]
+label = "Open in SQL IDE"
+description = "harlequin, or whatever $SQL_IDE is"
+icon = "[sql]"
+run = "${SQL_IDE:-harlequin} {path}"
+
+[[extension.command]]
+label = "Edit"
+description = "Open in $EDITOR"
+icon = "[edit]"
+run = "${EDITOR:-micro} {path}"
+
+[[association]]
+
+[association.match]
+extensions = ["txt", "json", "yaml", "yml", "toml", "rs", "py", "js", "ts", "sh", "go", "c", "h", "cpp", "java", "rb", "lua", "css", "xml", "ini", "conf", "cfg", "log"]
+dirs = false
+
+[[association.command]]
+label = "Edit"
+description = "Open in $EDITOR"
+icon = "[edit]"
+run = "${EDITOR:-micro} {path}"
+
+[[association.command]]
+label = "Reveal in Finder"
+description = "Select the file in Finder"
+icon = "[finder]"
+run = "open -R {path}"
+detach = true
+
+[[shortcut]]
+label = "Editor"
+description = "Open $EDITOR here"
+icon = "[edit]"
+run = "${EDITOR:-micro}"
+
+[[shortcut]]
+label = "Shell"
+description = "A fresh $SHELL"
+icon = "[sh]"
+run = "${SHELL:-zsh}"
+
+[[shortcut]]
+label = "Yazi"
+description = "File manager in the home directory"
+icon = "[yazi]"
+run = "yazi ~"
+
+[[shortcut]]
+label = "Broot"
+description = "Tree navigator in the home directory"
+icon = "[broot]"
+run = "broot ~"
+
+[[shortcut]]
+label = "gitui"
+description = "Git in the current directory"
+icon = "[git]"
+run = "gitui"
+
+[[shortcut]]
+label = "Cargo test"
+description = "Run the Rust test suite here"
+icon = "[test]"
+run = "cargo test"
+cwd = "."
