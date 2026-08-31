@@ -45,3 +45,16 @@ file manager, a shell keybinding, or the command line with one config.
 - **A starter config per OS.** `--init-config` writes a Linux, macOS or Windows sample
   whose tools exist there (`open -R`, `start ""`, `explorer /select,` …), so a fresh
   install followed by `--doctor` is not a wall of red.
+- **The picker is a real picker.** Fuzzy matching with the matched characters
+  highlighted — label hits outrank description hits, which outrank hits on the command
+  text. `1`–`9` pick a row directly while the list is unfiltered, and a command can carry
+  `key = "e"` so `Alt+e` picks it even mid-filter. `Home`/`End`/`PageUp`/`PageDown`,
+  `Ctrl-n`/`Ctrl-p`, and `Ctrl-u` to clear the filter. `j` and `k` are letters again —
+  they used to move the cursor, which made "json" and "kill" impossible to type.
+- **Recently used floats up.** With no filter typed, commands you pick often and recently
+  come first (a one-week half-life), with the config's order as the tiebreak. The record
+  lives in `$XDG_STATE_HOME/smartopen/state.toml` (`%LOCALAPPDATA%` on Windows); pass
+  `--no-history` or set `SMARTOPEN_NO_HISTORY=1` to neither read nor write it.
+- **Exit codes are the launched command's.** `smartopen` exits with whatever the command
+  it ran exited with (128+signal if a signal killed it), instead of turning every
+  non-zero exit into a generic error and exit 1.

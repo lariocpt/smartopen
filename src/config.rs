@@ -87,6 +87,10 @@ pub struct CommandEntry {
     /// single config can serve every machine. Absent means everywhere.
     #[serde(default)]
     pub platform: Option<Platform>,
+    /// A hotkey: `Alt+<key>` picks this command straight from the menu, even while a
+    /// filter is being typed. One character.
+    #[serde(default)]
+    pub key: Option<char>,
 }
 
 impl CommandEntry {
@@ -332,6 +336,9 @@ fn describe_command_details(command: &CommandEntry) -> String {
     }
     if let Some(platform) = command.platform {
         details.push(format!("platform: {platform:?}").to_lowercase());
+    }
+    if let Some(key) = command.key {
+        details.push(format!("key: Alt+{key}"));
     }
 
     format!(" ({})", details.join("; "))
