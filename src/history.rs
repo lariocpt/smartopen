@@ -26,6 +26,10 @@ const HALF_LIFE_DAYS: f64 = 7.0;
 pub struct History {
     #[serde(default)]
     entries: BTreeMap<String, Entry>,
+    /// The last value given for each `{{param}}`, keyed `label::name`, so
+    /// `default = "last"` and the choices picker can offer it first.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    params: BTreeMap<String, String>,
     #[serde(skip)]
     path: Option<PathBuf>,
 }
@@ -82,6 +86,29 @@ impl History {
         }
     }
 
+    /// The value `name` had the last time `label` ran, if any.
+    pub fn last_param(&self, label: &str, name: &str) -> Option<String> {
+        self.params.get(&param_key(label, name)).cloned()
+    }
+
+    /// Remember the values a run used. One save for the whole set.
+    pub fn record_params(&mut self, label: &str, values: &BTreeMap<String, String>) {
+        if values.is_empty() {
+            return;
+        }
+        for (name, value) in values {
+            self.params.insert(param_key(label, name), value.clone());
+        }
+        if let Some(path) = &self.path
+            && let Err(error) = self.save_to(path)
+        {
+            eprintln!(
+                "smartopen: could not save history to {}: {error:#}",
+                path.display()
+            );
+        }
+    }
+
     fn save_to(&self, path: &Path) -> anyhow::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -94,6 +121,10 @@ impl History {
 /// Labels are matched case-insensitively everywhere else, so the store agrees.
 fn key(label: &str) -> String {
     label.trim().to_lowercase()
+}
+
+fn param_key(label: &str, name: &str) -> String {
+    format!("{}::{name}", key(label))
 }
 
 fn now() -> u64 {
@@ -165,6 +196,30 @@ mod tests {
 
         let history = History::load(path);
         assert_eq!(history.frecency("anything"), 0.0);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn last_param_values_round_trip_per_label() {
+        let dir =
+            std::env::temp_dir().join(format!("smartopen-history-params-{}", std::process::id()));
+        let path = dir.join("state.toml");
+        let _ = fs::remove_dir_all(&dir);
+
+        let mut history = History::load(path.clone());
+        let values: BTreeMap<String, String> = [("branch".to_string(), "feature".to_string())]
+            .into_iter()
+            .collect();
+        history.record_params("Checkout", &values);
+
+        let reloaded = History::load(path);
+        assert_eq!(
+            reloaded.last_param("checkout", "branch").as_deref(),
+            Some("feature")
+        );
+        assert_eq!(reloaded.last_param("Other", "branch"), None);
+        assert_eq!(reloaded.last_param("Checkout", "msg"), None);
 
         let _ = fs::remove_dir_all(&dir);
     }

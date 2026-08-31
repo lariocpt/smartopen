@@ -7,6 +7,7 @@ use anyhow::{Context, Result, bail};
 use crate::config::CommandEntry;
 use crate::shell::Shell;
 use crate::target::Target;
+use crate::terminal;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionPlan {
@@ -45,9 +46,15 @@ pub const PLACEHOLDERS: &[&str] = &[
 /// way the launched program did. A detached launch reports 0: there is nothing to wait
 /// for. Only a failure to start at all is an error.
 pub fn run_command(command: &CommandEntry, targets: &[Target]) -> Result<i32> {
-    let plan = plan_command(command, targets)?;
+    let mut plan = plan_command(command, targets)?;
 
-    if command.detach {
+    // A new terminal window is a GUI launch: wrap the line for the terminal program and
+    // let go of it, the same as `detach`.
+    if command.terminal {
+        plan.command = terminal::wrap(&plan.command, plan.cwd.as_deref())?;
+    }
+
+    if command.detach || command.terminal {
         spawn_detached(&plan, command)?;
         return Ok(0);
     }

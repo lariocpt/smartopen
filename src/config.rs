@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -5,27 +6,37 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 
+use crate::launcher::When;
+use crate::params::Param;
 use crate::paths;
 use crate::platform::Platform;
 
 // Every table is `deny_unknown_fields`: a misspelt key (`extension = ` for
 // `extensions = `) is an error at load time, not a rule that silently never matches.
 
+// Empty sections are not serialised, so a fragment printed by `shortcuts import` holds
+// only the shortcuts, and `--list --json` only what the config actually sets.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "MenuConfig::is_default")]
     pub menu: MenuConfig,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extension: Vec<ExtensionAssociation>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub folder: Vec<FolderAssociation>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub url: Vec<UrlAssociation>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub association: Vec<Association>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shortcut: Vec<CommandEntry>,
+}
+
+impl MenuConfig {
+    fn is_default(&self) -> bool {
+        self.art_file.is_none()
+    }
 }
 
 /// `[[url]]`: commands for URL targets, chosen by scheme and host.
@@ -102,36 +113,64 @@ pub struct MatchRule {
     pub shebang: Vec<String>,
 }
 
+// Serialisation skips defaults so `--list --json` and `shortcuts import` emit only what
+// was set, and the TOML an import prints reads like something a person wrote.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CommandEntry {
     pub label: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub icon: String,
     pub run: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
     /// Launch detached (fire-and-forget): no wait, no inherited stdio. For GUI apps that
     /// shouldn't block the menu or surface a non-zero exit (the opener's `orphan`).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub detach: bool,
     /// Offer this command only on one platform (`unix`, `linux`, `macos`, `windows`), so a
     /// single config can serve every machine. Absent means everywhere.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform: Option<Platform>,
     /// A hotkey: `Alt+<key>` picks this command straight from the menu, even while a
     /// filter is being typed. One character.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<char>,
     /// Higher sorts first in the menu; equal priorities keep config order. Default 0.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_zero")]
     pub priority: i32,
     /// When exactly one offered command is `default`, it runs without a menu
     /// (`--menu` still shows one).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub default: bool,
+    /// Offer only while every condition holds: `cwd_has`, `cwd_matches`, `env`, `has`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when: Option<When>,
+    /// `{{name}}` parameters asked for before the command runs, keyed by name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub param: BTreeMap<String, Param>,
+    /// Run in a new terminal window, resolved per OS (`$TERMINAL`, Terminal.app, wt).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub terminal: bool,
+    /// Show the fully rendered command and ask before running it.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub confirm: bool,
+    /// A heading shown in the picker and usable as a `group:` filter prefix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+    /// Runtime only: set by `--all` on a command a `when` condition hid, with the reason.
+    #[serde(skip)]
+    pub hidden_reason: Option<String>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+fn is_zero(value: &i32) -> bool {
+    *value == 0
 }
 
 impl CommandEntry {
@@ -465,6 +504,30 @@ fn describe_command_details(command: &CommandEntry) -> String {
     }
     if command.default {
         details.push("default".to_string());
+    }
+    if let Some(group) = &command.group {
+        details.push(format!("group: {group}"));
+    }
+    if command.terminal {
+        details.push("terminal".to_string());
+    }
+    if command.confirm {
+        details.push("confirm".to_string());
+    }
+    if !command.param.is_empty() {
+        let names: Vec<&str> = command.param.keys().map(String::as_str).collect();
+        details.push(format!("params: {}", names.join(", ")));
+    }
+    if let Some(when) = &command.when
+        && !when.is_empty()
+    {
+        details.push(format!(
+            "when: {}",
+            toml::to_string(when)
+                .unwrap_or_default()
+                .trim()
+                .replace('\n', ", ")
+        ));
     }
 
     format!(" ({})", details.join("; "))
