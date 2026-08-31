@@ -11,6 +11,8 @@ section here. `version` in `Cargo.toml` must match the tag being released.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-31
+
 First public release. Until now this was a LAN-only tool named `opn`, built by Jenkins
 for one Linux distribution; this release is the same picker made honest about the
 platforms it runs on, published to crates.io and GitHub Releases, and reachable from a
