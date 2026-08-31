@@ -22,7 +22,7 @@ detach = true
 label = "Open in Editor"
 description = "Open the folder in micro"
 icon = "[edit]"
-run = "micro {path}"
+run = "micro {paths}"
 
 [[folder.command]]
 label = "Yazi"
@@ -62,7 +62,7 @@ run = "glow -p {path}"
 label = "Edit"
 description = "Open in micro"
 icon = "[edit]"
-run = "micro {path}"
+run = "micro {paths}"
 
 [[extension.command]]
 label = "Open in default app"
@@ -124,7 +124,7 @@ detach = true
 label = "Edit"
 description = "Open in micro"
 icon = "[edit]"
-run = "micro {path}"
+run = "micro {paths}"
 
 [[association]]
 
@@ -136,7 +136,7 @@ dirs = false
 label = "Edit"
 description = "Open in micro"
 icon = "[edit]"
-run = "micro {path}"
+run = "micro {paths}"
 
 [[association.command]]
 label = "Open in Notepad"
@@ -150,6 +150,38 @@ label = "Show in Explorer"
 description = "Select the file in File Explorer"
 icon = "[explorer]"
 run = "explorer /select,{path}"
+detach = true
+
+# Anything else that is text — an unknown extension — by the MIME type read from the
+# file's bytes.
+[[association]]
+
+[association.match]
+mime = ["text/*"]
+dirs = false
+
+[[association.command]]
+label = "Edit"
+description = "Open in micro"
+icon = "[edit]"
+run = "micro {paths}"
+
+[[association.command]]
+label = "Open in Notepad"
+description = "Always there"
+icon = "[notepad]"
+run = "notepad {path}"
+detach = true
+
+# URLs: `smartopen https://…` from a script, a keybinding or a shortcut parameter.
+[[url]]
+schemes = ["http", "https"]
+
+[[url.command]]
+label = "Open in browser"
+description = "The default browser"
+icon = "[web]"
+run = "start \"\" {url}"
 detach = true
 
 [[shortcut]]

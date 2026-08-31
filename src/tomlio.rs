@@ -1,9 +1,9 @@
 //! Read/splice/write of `~/.config/yazi/yazi.toml`.
 //!
 //! We own only the `[opener]` and `[open]` tables. To update them we parse the existing
-//! file with `toml_edit`, drop those two tables, re-serialize the remainder (which keeps
-//! `[mgr]`/`[preview]`/comments/formatting verbatim), then append our freshly rendered
-//! sections as text. Writes are atomic (temp + rename) and back up the prior file.
+//! file with `toml_edit`, swap those two tables for freshly rendered ones in the positions
+//! they had (the rest — `[mgr]`/`[preview]`/comments/formatting — stays verbatim), and
+//! re-serialize. Writes are atomic (temp + rename) and back up the prior file.
 
 use std::fs;
 use std::io::ErrorKind;
@@ -44,25 +44,76 @@ pub fn read_optional(path: &Path) -> Result<Option<String>> {
 
 /// Produce the full new file contents: existing file with our two tables replaced
 /// (or a fresh file containing only our sections when `existing` is `None`).
+///
+/// Each table goes back where its predecessor was, so a `[preview]` that followed
+/// `[open]` still follows it — the old remove-and-append moved every later table above
+/// ours, and a `diff` showed untouched tables shifting. A table the file never had goes
+/// at the end.
 pub fn render_to_string(existing: Option<&str>, spec: &Spec) -> Result<String> {
-    match existing {
-        None => Ok(render::fragment(spec)),
-        Some(text) => {
-            let mut doc: DocumentMut = text
-                .parse()
-                .context("existing yazi.toml is not valid TOML")?;
-            doc.remove("opener");
-            doc.remove("open");
-            let base = doc.to_string();
-            let base = base.trim_end_matches(['\n', ' ', '\t']);
-            let frag = render::fragment(spec);
-            if base.is_empty() {
-                Ok(frag)
-            } else {
-                Ok(format!("{base}\n\n{frag}"))
+    let Some(text) = existing else {
+        return Ok(render::fragment(spec));
+    };
+    let mut doc: DocumentMut = text
+        .parse()
+        .context("existing yazi.toml is not valid TOML")?;
+    let mut fresh: DocumentMut = render::fragment(spec)
+        .parse()
+        .context("rendered [opener]/[open] fragment is not valid TOML")?;
+    let mut next = max_position(&doc).map_or(0, |p| p + 1);
+    for key in ["opener", "open"] {
+        let position = doc
+            .get(key)
+            .and_then(|item| item.as_table())
+            .and_then(|table| table.position());
+        doc.remove(key);
+        let Some(mut item) = fresh.remove(key) else {
+            continue;
+        };
+        if let Some(table) = item.as_table_mut() {
+            let assigned = position.unwrap_or_else(|| {
+                next += 1;
+                next - 1
+            });
+            table.set_position(Some(assigned));
+            // A blank line before the table when another table precedes it, as between
+            // any two tables in a file — and none when it is the first, so a file
+            // created from the bare fragment re-renders to itself and `check` is quiet.
+            let has_predecessor = positions(&doc).into_iter().any(|p| p < assigned);
+            let prefix = table
+                .decor()
+                .prefix()
+                .and_then(|p| p.as_str())
+                .unwrap_or_default()
+                .to_string();
+            if has_predecessor && !prefix.starts_with('\n') {
+                table.decor_mut().set_prefix(format!("\n{prefix}"));
+            }
+        }
+        doc.insert(key, item);
+    }
+    Ok(doc.to_string())
+}
+
+/// The highest table position in the document, subtables included, so a new table can
+/// be placed after every existing one.
+fn max_position(table: &toml_edit::Table) -> Option<isize> {
+    positions(table).into_iter().max()
+}
+
+/// Every table position in the document, subtables and arrays of tables included.
+fn positions(table: &toml_edit::Table) -> Vec<isize> {
+    let mut out: Vec<isize> = table.position().into_iter().collect();
+    for (_, item) in table.iter() {
+        if let Some(sub) = item.as_table() {
+            out.extend(positions(sub));
+        }
+        if let Some(array) = item.as_array_of_tables() {
+            for sub in array.iter() {
+                out.extend(positions(sub));
             }
         }
     }
+    out
 }
 
 /// Does this TOML text already define `[opener]` or `[open]`? (false if it doesn't parse).
@@ -135,4 +186,52 @@ pub(crate) fn atomic_write(path: &Path, content: &str) -> Result<()> {
     fs::write(&tmp, content).with_context(|| format!("writing {}", tmp.display()))?;
     fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EXISTING: &str = "[mgr]\nratio = [1, 4, 3]\n\n[opener]\nedit = [{ run = 'vi %s', block = true }]\n\n[open]\nrules = [{ url = '*', use = 'edit' }]\n\n[preview]\ntab_size = 4\n";
+
+    fn offset(text: &str, needle: &str) -> usize {
+        text.find(needle)
+            .unwrap_or_else(|| panic!("{needle} missing:\n{text}"))
+    }
+
+    #[test]
+    fn managed_tables_go_back_where_they_were() {
+        // The old remove-and-append moved `[preview]` above the rewritten tables, and a
+        // `diff` showed a table nobody touched as changed.
+        let out = render_to_string(Some(EXISTING), &Spec::builtin()).unwrap();
+        assert!(offset(&out, "[mgr]") < offset(&out, "\n[opener]"), "{out}");
+        assert!(
+            offset(&out, "\n[opener]") < offset(&out, "\n[open]\n"),
+            "{out}"
+        );
+        assert!(
+            offset(&out, "\n[open]\n") < offset(&out, "[preview]"),
+            "{out}"
+        );
+        assert!(out.contains("ratio = [1, 4, 3]") && out.contains("tab_size = 4"));
+        assert!(!out.contains("vi %s"), "{out}");
+        out.parse::<DocumentMut>().expect("valid TOML");
+        // Applying to its own output changes nothing.
+        assert_eq!(render_to_string(Some(&out), &Spec::builtin()).unwrap(), out);
+    }
+
+    #[test]
+    fn tables_the_file_never_had_go_at_the_end() {
+        let existing = "[mgr]\nratio = [1, 4, 3]\n\n[preview]\ntab_size = 4\n";
+        let out = render_to_string(Some(existing), &Spec::builtin()).unwrap();
+        assert!(
+            offset(&out, "[preview]") < offset(&out, "\n[opener]"),
+            "{out}"
+        );
+        assert!(
+            offset(&out, "\n[opener]") < offset(&out, "\n[open]\n"),
+            "{out}"
+        );
+        assert_eq!(render_to_string(Some(&out), &Spec::builtin()).unwrap(), out);
+    }
 }

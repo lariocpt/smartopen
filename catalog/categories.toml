@@ -62,7 +62,7 @@ icon = "[md]"
 [[category.choice]]
 tool = "$EDITOR"
 label = "Edit"
-run = "${EDITOR:-micro} {path}"
+run = "${EDITOR:-micro} {paths}"
 icon = "[edit]"
 platform = "unix"
 
@@ -119,7 +119,7 @@ icon = "[csv]"
 [[category.choice]]
 tool = "$EDITOR"
 label = "Edit"
-run = "${EDITOR:-micro} {path}"
+run = "${EDITOR:-micro} {paths}"
 icon = "[edit]"
 platform = "unix"
 
@@ -136,7 +136,7 @@ icon = "[env]"
 [[category.choice]]
 tool = "$EDITOR"
 label = "Edit"
-run = "${EDITOR:-micro} {path}"
+run = "${EDITOR:-micro} {paths}"
 icon = "[edit]"
 platform = "unix"
 
@@ -165,7 +165,7 @@ platform = "linux"
 [[category.choice]]
 tool = "$EDITOR"
 label = "Edit"
-run = "${EDITOR:-micro} {path}"
+run = "${EDITOR:-micro} {paths}"
 icon = "[edit]"
 platform = "unix"
 
@@ -181,7 +181,7 @@ icon = "[sql]"
 [[category.choice]]
 tool = "$EDITOR"
 label = "Edit"
-run = "${EDITOR:-micro} {path}"
+run = "${EDITOR:-micro} {paths}"
 icon = "[edit]"
 platform = "unix"
 
@@ -203,7 +203,7 @@ icon = "[json]"
 [[category.choice]]
 tool = "$EDITOR"
 label = "Edit"
-run = "${EDITOR:-micro} {path}"
+run = "${EDITOR:-micro} {paths}"
 icon = "[edit]"
 platform = "unix"
 
@@ -215,23 +215,23 @@ extensions = ["txt", "yaml", "yml", "toml", "rs", "py", "js", "ts", "sh", "go", 
 [[category.choice]]
 tool = "$EDITOR"
 label = "Edit"
-run = "${EDITOR:-micro} {path}"
+run = "${EDITOR:-micro} {paths}"
 icon = "[edit]"
 platform = "unix"
 [[category.choice]]
 tool = "micro"
 label = "Edit in micro"
-run = "micro {path}"
+run = "micro {paths}"
 icon = "[edit]"
 [[category.choice]]
 tool = "helix"
 label = "Edit in helix"
-run = "hx {path}"
+run = "hx {paths}"
 icon = "[edit]"
 [[category.choice]]
 tool = "neovim"
 label = "Edit in neovim"
-run = "nvim {path}"
+run = "nvim {paths}"
 icon = "[edit]"
 
 [[category]]
@@ -241,17 +241,17 @@ extensions = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]
 [[category.choice]]
 tool = "chafa"
 label = "View with chafa"
-run = "chafa {path}"
+run = "chafa {paths}"
 icon = "[img]"
 [[category.choice]]
 tool = "viu"
 label = "View with viu"
-run = "viu {path}"
+run = "viu {paths}"
 icon = "[img]"
 [[category.choice]]
 tool = "timg"
 label = "View with timg"
-run = "timg {path}"
+run = "timg {paths}"
 icon = "[img]"
 [[category.choice]]
 tool = "open"
@@ -268,18 +268,18 @@ extensions = ["mp4", "mkv", "webm", "mov", "avi"]
 [[category.choice]]
 tool = "mpv"
 label = "Play in mpv"
-run = "mpv {path}"
+run = "mpv {paths}"
 icon = "[video]"
 detach = true
 [[category.choice]]
 tool = "mpv"
 label = "Play as text (mpv --vo=tct)"
-run = "mpv --vo=tct {path}"
+run = "mpv --vo=tct {paths}"
 icon = "[video]"
 [[category.choice]]
 tool = "timg"
 label = "Play with timg"
-run = "timg {path}"
+run = "timg {paths}"
 icon = "[video]"
 
 [[category]]
@@ -289,7 +289,7 @@ extensions = ["zip", "tar", "gz", "tgz", "xz", "zst", "7z", "rar", "bz2"]
 [[category.choice]]
 tool = "ouch"
 label = "List contents"
-run = "ouch list {path}"
+run = "ouch list {paths}"
 icon = "[zip]"
 [[category.choice]]
 tool = "ouch"
@@ -304,7 +304,7 @@ extensions = ["log"]
 [[category.choice]]
 tool = "lnav"
 label = "Open in lnav"
-run = "lnav {path}"
+run = "lnav {paths}"
 icon = "[log]"
 [[category.choice]]
 tool = "tailspin"
@@ -330,6 +330,6 @@ icon = "[docker]"
 [[category.choice]]
 tool = "$EDITOR"
 label = "Edit"
-run = "${EDITOR:-micro} {path}"
+run = "${EDITOR:-micro} {paths}"
 icon = "[edit]"
 platform = "unix"

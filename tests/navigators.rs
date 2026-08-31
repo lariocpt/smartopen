@@ -49,18 +49,6 @@ impl Sandbox {
         .unwrap();
         fs::create_dir_all(sandbox.files()).unwrap();
         fs::write(sandbox.files().join("sample.csv"), "a,b\n1,2\n").unwrap();
-        // A stand-in for `$TERMINAL`: drops `-e` and runs the command in place, so the
-        // broot verb's "open in a new terminal window" happens in this pty.
-        let bin = sandbox.bin_dir();
-        fs::create_dir_all(&bin).unwrap();
-        let faketerm = bin.join("faketerm");
-        fs::write(
-            &faketerm,
-            "#!/bin/sh\n[ \"$1\" = -e ] && shift\nexec \"$@\"\n",
-        )
-        .unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&faketerm, fs::Permissions::from_mode(0o755)).unwrap();
         sandbox
     }
 
@@ -73,9 +61,6 @@ impl Sandbox {
     fn files(&self) -> PathBuf {
         self.path().join("files")
     }
-    fn bin_dir(&self) -> PathBuf {
-        self.path().join("bin")
-    }
     fn out_file(&self) -> PathBuf {
         self.path().join("recorded.txt")
     }
@@ -85,9 +70,8 @@ impl Sandbox {
     fn path_env(&self) -> String {
         let bins = Path::new(SMARTOPEN).parent().unwrap();
         format!(
-            "{}:{}:{}",
+            "{}:{}",
             bins.display(),
-            self.bin_dir().display(),
             std::env::var("PATH").unwrap_or_default()
         )
     }
@@ -103,7 +87,6 @@ impl Sandbox {
         // broot does not follow XDG on macOS; this is the override it honours everywhere.
         cmd.env("BROOT_CONFIG_DIR", self.config_dir().join("broot"));
         cmd.env("TERM", "xterm-256color");
-        cmd.env("TERMINAL", self.bin_dir().join("faketerm"));
         cmd.env("SMARTOPEN_TEST_OUT", self.out_file());
         cmd.env("SMARTOPEN_NO_HISTORY", "1");
         cmd.env("LANG", "C.UTF-8");

@@ -336,6 +336,12 @@ fn first_executable_for(shell: Shell, command_line: &str) -> ExecutableHint {
             continue;
         }
 
+        // `run = "{path}"`: the target is the program, and a `{{param}}` is whatever
+        // gets typed. Nothing to look up until it is substituted.
+        if word.starts_with('{') {
+            return ExecutableHint::Dynamic(format!("{word} is substituted at run time"));
+        }
+
         if starts_with_shell_expansion(shell, &word) {
             return ExecutableHint::Dynamic(format!("starts with {word}"));
         }

@@ -45,7 +45,7 @@ use crate::matcher::{default_command, matching_commands, shortcuts_here};
 use crate::menu::select_command;
 use crate::navigators::{Action as NavAction, Navigator};
 use crate::params::TerminalPrompter;
-use crate::runner::{plan_command_with, plan_cwd, run_command};
+use crate::runner::{PLACEHOLDERS, plan_command_with, plan_cwd, run_command};
 use crate::shell::Shell;
 use crate::shell_widget::ShellKind;
 use crate::target::{Target, targets_from_args};
@@ -354,6 +354,12 @@ pub fn run() -> Result<i32> {
 
     if let Some(subcommand) = cli.subcommand {
         return run_subcommand(subcommand, &config_path, cli.no_project);
+    }
+
+    // `--json` belongs to two of the legacy flags. On its own it used to be ignored, and
+    // `smartopen --json file` opened the file.
+    if cli.json && !(cli.list || cli.doctor) {
+        bail!("--json goes with --list or --doctor: `config list --json`, `config doctor --json`");
     }
 
     // The hidden legacy flags map onto the subcommands they became.
@@ -876,6 +882,24 @@ fn execute(
     };
 
     let plan = plan_command_with(command, targets, values.as_ref())?;
+
+    // `{path}`, `{dir}`, `{name}`… are the first target by design; `{paths}` is all of
+    // them. A selection from yazi arrives as several, and a command that names only the
+    // first used to drop the rest without a word.
+    if targets.len() > 1 && !command.run.contains("{paths}") {
+        let first_only = PLACEHOLDERS
+            .iter()
+            .any(|p| *p != "{paths}" && command.run.contains(p));
+        if first_only {
+            eprintln!(
+                "warning: {} of {} targets ignored: '{}' names only the first ({{path}}); use {{paths}} for all of them",
+                targets.len() - 1,
+                targets.len(),
+                command.label
+            );
+        }
+    }
+
     // Answers are remembered only once the command is really going to run — after the
     // confirm gate, never on --dry-run — or a declined `confirm` would still become the
     // "last" value next time.
