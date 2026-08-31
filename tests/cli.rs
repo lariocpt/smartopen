@@ -50,6 +50,8 @@ impl Sandbox {
             .env("XDG_STATE_HOME", self.path().join("state"))
             .env("APPDATA", self.config_dir())
             .env("LOCALAPPDATA", self.path().join("state"))
+            // broot does not follow XDG on macOS; this override is honoured everywhere.
+            .env("BROOT_CONFIG_DIR", self.config_dir().join("broot"))
             .env("TERM", "dumb")
             .current_dir(self.path());
         cmd
@@ -248,14 +250,18 @@ fn wizard_yes_no_install_writes_a_config_doctor_accepts() {
         .args(["config", "doctor"])
         .assert()
         .success();
-    // The navigators were configured into the sandbox, nowhere else.
-    assert!(
+    // The navigators were configured into the sandbox, nowhere else. yazi keeps its
+    // file under yazi/config/ on Windows; broot's dir is pinned by BROOT_CONFIG_DIR.
+    let yazi_toml = if cfg!(windows) {
         sandbox
             .config_dir()
             .join("yazi")
+            .join("config")
             .join("yazi.toml")
-            .is_file()
-    );
+    } else {
+        sandbox.config_dir().join("yazi").join("yazi.toml")
+    };
+    assert!(yazi_toml.is_file(), "{}", yazi_toml.display());
     assert!(
         sandbox
             .config_dir()
