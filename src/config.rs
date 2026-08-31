@@ -3,12 +3,16 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::paths;
 use crate::platform::Platform;
 
-#[derive(Debug, Clone, Deserialize)]
+// Every table is `deny_unknown_fields`: a misspelt key (`extension = ` for
+// `extensions = `) is an error at load time, not a rule that silently never matches.
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(default)]
     pub menu: MenuConfig,
@@ -22,13 +26,15 @@ pub struct Config {
     pub shortcut: Vec<CommandEntry>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct MenuConfig {
     #[serde(default)]
     pub art_file: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Association {
     #[serde(rename = "match")]
     pub match_rule: MatchRule,
@@ -36,7 +42,8 @@ pub struct Association {
     pub commands: Vec<CommandEntry>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExtensionAssociation {
     pub extensions: Vec<String>,
     #[serde(default)]
@@ -45,7 +52,8 @@ pub struct ExtensionAssociation {
     pub commands: Vec<CommandEntry>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct FolderAssociation {
     #[serde(default)]
     pub names: Vec<String>,
@@ -55,7 +63,8 @@ pub struct FolderAssociation {
     pub commands: Vec<CommandEntry>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct MatchRule {
     #[serde(default)]
     pub extensions: Vec<String>,
@@ -69,7 +78,8 @@ pub struct MatchRule {
     pub empty: Option<bool>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct CommandEntry {
     pub label: String,
     #[serde(default)]
@@ -365,6 +375,23 @@ mod tests {
             assert!(!config.association.is_empty(), "{name}: no [[association]]");
             assert!(!config.shortcut.is_empty(), "{name}: no [[shortcut]]");
         }
+    }
+
+    #[test]
+    fn a_misspelt_key_is_an_error_not_a_silent_no_op() {
+        let typo = "[[extension]]\nextension = [\"rs\"]\n\n[[extension.command]]\nlabel = \"x\"\nrun = \"x\"\n";
+        let error = toml::from_str::<Config>(typo).expect_err("must reject `extension =`");
+        assert!(
+            error.to_string().contains("unknown field `extension`"),
+            "{error}"
+        );
+
+        let nested = "[[shortcut]]\nlabel = \"x\"\nrun = \"x\"\ndettach = true\n";
+        let error = toml::from_str::<Config>(nested).expect_err("must reject `dettach`");
+        assert!(
+            error.to_string().contains("unknown field `dettach`"),
+            "{error}"
+        );
     }
 
     #[test]
