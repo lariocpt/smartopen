@@ -790,6 +790,7 @@ dependencies = [
  "crossterm",
  "dunce",
  "infer",
+ "libc",
  "ratatui",
  "serde",
  "serde_json",

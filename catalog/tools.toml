@@ -1,0 +1,297 @@
+# The wizard's tool catalogue.
+#
+# EVERY INSTALL KEY IS A VERIFIED CLAIM (2026-08-31):
+#   cargo  = the crate of that name IS this tool — checked on crates.io. Missing on purpose
+#            for micro, glow, chafa, mpv, helix, hl, fx, lazygit, lnav, lynx, neovim: those
+#            names on crates.io are unrelated crates (a macro playground, GL bindings…) or
+#            the tool is not Rust. src/catalog.rs refuses a cargo key for them.
+#   pacman = in the Arch repositories — checked with `pacman -Si`.
+#   brew   = the Homebrew formula name, for the mainstream tools only.
+#   apt/dnf = only the long-established C tools whose package names are stable.
+#   github = owner/repo, for a release-asset fallback through `eget`.
+# A missing key means "not there", not "didn't look".
+
+[[tool]]
+name = "yazi"
+summary = "Terminal file manager with previews; the main way into this menu"
+homepage = "https://yazi-rs.github.io"
+[tool.install]
+cargo = "yazi-fm yazi-cli"
+pacman = "yazi"
+brew = "yazi"
+winget = "sxyazi.yazi"
+github = "sxyazi/yazi"
+
+[[tool]]
+name = "broot"
+summary = "Tree navigator and launcher; Enter on a file opens this menu"
+homepage = "https://dystroy.org/broot"
+[tool.install]
+cargo = "broot"
+pacman = "broot"
+brew = "broot"
+apt = "broot"
+github = "Canop/broot"
+
+[[tool]]
+name = "gitui"
+summary = "Terminal UI for git"
+homepage = "https://github.com/gitui-org/gitui"
+[tool.install]
+cargo = "gitui"
+pacman = "gitui"
+brew = "gitui"
+github = "gitui-org/gitui"
+
+[[tool]]
+name = "lazygit"
+summary = "Terminal UI for git, the other one"
+homepage = "https://github.com/jesseduffield/lazygit"
+[tool.install]
+pacman = "lazygit"
+brew = "lazygit"
+winget = "JesseDuffield.lazygit"
+github = "jesseduffield/lazygit"
+
+[[tool]]
+name = "gittop"
+summary = "Repository stats at a glance"
+homepage = "https://github.com/hjr265/gittop"
+platforms = ["unix"]
+[tool.install]
+github = "hjr265/gittop"
+
+[[tool]]
+name = "mdfried"
+summary = "Rendered Markdown with images and big headers (needs a graphics-capable terminal)"
+homepage = "https://github.com/benjajaja/mdfried"
+platforms = ["unix"]
+[tool.install]
+cargo = "mdfried"
+pacman = "mdfried"
+
+[[tool]]
+name = "glow"
+summary = "Rendered Markdown, works in any terminal"
+homepage = "https://github.com/charmbracelet/glow"
+[tool.install]
+pacman = "glow"
+brew = "glow"
+winget = "charmbracelet.glow"
+github = "charmbracelet/glow"
+
+[[tool]]
+name = "doxx"
+summary = "Word .docx viewer"
+homepage = "https://github.com/bgreenwell/doxx"
+[tool.install]
+cargo = "doxx"
+pacman = "doxx"
+github = "bgreenwell/doxx"
+
+[[tool]]
+name = "xleak"
+summary = "Excel .xlsx/.xls viewer with an interactive table"
+homepage = "https://github.com/bgreenwell/xleak"
+[tool.install]
+cargo = "xleak"
+github = "bgreenwell/xleak"
+
+[[tool]]
+name = "xan"
+summary = "CSV viewer and Swiss-army knife"
+homepage = "https://github.com/medialab/xan"
+[tool.install]
+cargo = "xan"
+pacman = "xan"
+github = "medialab/xan"
+
+[[tool]]
+name = "csvi"
+summary = "Spreadsheet-style CSV editor"
+homepage = "https://github.com/hymkor/csvi"
+[tool.install]
+github = "hymkor/csvi"
+
+[[tool]]
+name = "lazyenv"
+summary = ".env editor for a whole directory"
+homepage = "https://github.com/lazynop/lazyenv"
+platforms = ["unix"]
+[tool.install]
+github = "lazynop/lazyenv"
+
+[[tool]]
+name = "lynx"
+summary = "Text-mode web browser"
+homepage = "https://lynx.invisible-island.net"
+platforms = ["unix"]
+[tool.install]
+pacman = "lynx"
+apt = "lynx"
+dnf = "lynx"
+brew = "lynx"
+
+[[tool]]
+name = "carbonyl"
+summary = "Chromium in the terminal — real pages, images and video"
+homepage = "https://github.com/fathyb/carbonyl"
+platforms = ["linux", "macos"]
+[tool.install]
+github = "fathyb/carbonyl"
+
+[[tool]]
+name = "harlequin"
+summary = "SQL IDE in the terminal"
+homepage = "https://harlequin.sh"
+[tool.install]
+pipx = "harlequin"
+brew = "harlequin"
+
+[[tool]]
+name = "jless"
+summary = "JSON viewer with folding and search"
+homepage = "https://jless.io"
+[tool.install]
+cargo = "jless"
+pacman = "jless"
+brew = "jless"
+github = "PaulJuliusMartinez/jless"
+
+[[tool]]
+name = "fx"
+summary = "JSON viewer and processor"
+homepage = "https://fx.wtf"
+[tool.install]
+pacman = "fx"
+brew = "fx"
+github = "antonmedv/fx"
+
+[[tool]]
+name = "micro"
+summary = "Terminal editor that behaves like a desktop one"
+homepage = "https://micro-editor.github.io"
+[tool.install]
+pacman = "micro"
+apt = "micro"
+dnf = "micro"
+brew = "micro"
+winget = "zyedidia.micro"
+github = "zyedidia/micro"
+
+[[tool]]
+name = "helix"
+binary = "hx"
+summary = "Modal editor with language servers built in"
+homepage = "https://helix-editor.com"
+[tool.install]
+pacman = "helix"
+brew = "helix"
+winget = "Helix.Helix"
+github = "helix-editor/helix"
+
+[[tool]]
+name = "neovim"
+binary = "nvim"
+summary = "Vim, extended"
+homepage = "https://neovim.io"
+[tool.install]
+pacman = "neovim"
+apt = "neovim"
+dnf = "neovim"
+brew = "neovim"
+winget = "Neovim.Neovim"
+github = "neovim/neovim"
+
+[[tool]]
+name = "chafa"
+summary = "Images as terminal graphics or characters"
+homepage = "https://hpjansson.org/chafa"
+platforms = ["unix"]
+[tool.install]
+pacman = "chafa"
+apt = "chafa"
+dnf = "chafa"
+brew = "chafa"
+
+[[tool]]
+name = "timg"
+summary = "Image and video viewer for the terminal"
+homepage = "https://github.com/hzeller/timg"
+platforms = ["unix"]
+[tool.install]
+apt = "timg"
+brew = "timg"
+github = "hzeller/timg"
+
+[[tool]]
+name = "viu"
+summary = "Image viewer for the terminal"
+homepage = "https://github.com/atanunq/viu"
+[tool.install]
+cargo = "viu"
+pacman = "viu"
+brew = "viu"
+github = "atanunq/viu"
+
+[[tool]]
+name = "mpv"
+summary = "Media player; plays video as text with --vo=tct"
+homepage = "https://mpv.io"
+[tool.install]
+pacman = "mpv"
+apt = "mpv"
+dnf = "mpv"
+brew = "mpv"
+
+[[tool]]
+name = "ouch"
+summary = "Compress and decompress any archive, one command"
+homepage = "https://github.com/ouch-org/ouch"
+[tool.install]
+cargo = "ouch"
+pacman = "ouch"
+brew = "ouch"
+github = "ouch-org/ouch"
+
+[[tool]]
+name = "lnav"
+summary = "Log file navigator: formats, filters, SQL over logs"
+homepage = "https://lnav.org"
+platforms = ["unix"]
+[tool.install]
+pacman = "lnav"
+apt = "lnav"
+dnf = "lnav"
+brew = "lnav"
+github = "tstack/lnav"
+
+[[tool]]
+name = "tailspin"
+binary = "tspin"
+summary = "Log highlighter"
+homepage = "https://github.com/bensadeh/tailspin"
+[tool.install]
+cargo = "tailspin"
+pacman = "tailspin"
+brew = "tailspin"
+github = "bensadeh/tailspin"
+
+[[tool]]
+name = "ducker"
+summary = "Docker TUI"
+homepage = "https://github.com/robertpsoane/ducker"
+[tool.install]
+cargo = "ducker"
+pacman = "ducker"
+github = "robertpsoane/ducker"
+
+[[tool]]
+name = "lazydocker"
+summary = "Docker and compose TUI"
+homepage = "https://github.com/jesseduffield/lazydocker"
+[tool.install]
+pacman = "lazydocker"
+brew = "lazydocker"
+winget = "JesseDuffield.lazydocker"
+github = "jesseduffield/lazydocker"

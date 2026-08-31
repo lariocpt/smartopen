@@ -787,3 +787,143 @@ mod tests {
         assert_eq!(picker.selected, 0);
     }
 }
+
+// ---- multi-select, for the wizard --------------------------------------------------
+
+/// One row of a [`select_many`] list.
+#[derive(Clone, Debug)]
+pub struct Choice {
+    pub label: String,
+    /// Shown in the right-hand pane for the highlighted row.
+    pub detail: String,
+    /// A short marker in the gutter: `✓` installed, `↓` would be installed, ` ` nothing.
+    pub marker: String,
+    pub checked: bool,
+}
+
+/// A checklist: Space toggles, `a`/`n` check all/none, Enter confirms, Esc cancels.
+/// Returns the checked flags in row order, or `None` if cancelled.
+pub fn select_many(title: &str, intro: &str, choices: &[Choice]) -> Result<Option<Vec<bool>>> {
+    if choices.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    let mut terminal = TerminalSession::new()?;
+    let mut list = MultiPicker {
+        title,
+        intro,
+        choices,
+        checked: choices.iter().map(|c| c.checked).collect(),
+        selected: 0,
+    };
+    list.run(&mut terminal.terminal)
+}
+
+struct MultiPicker<'a> {
+    title: &'a str,
+    intro: &'a str,
+    choices: &'a [Choice],
+    checked: Vec<bool>,
+    selected: usize,
+}
+
+impl MultiPicker<'_> {
+    fn run(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    ) -> Result<Option<Vec<bool>>> {
+        loop {
+            terminal.draw(|frame| self.draw(frame))?;
+            if let Event::Key(key) = event::read()?
+                && key.kind == KeyEventKind::Press
+            {
+                let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+                match key.code {
+                    KeyCode::Esc => return Ok(None),
+                    KeyCode::Char('c') if ctrl => return Ok(None),
+                    KeyCode::Enter => return Ok(Some(self.checked.clone())),
+                    KeyCode::Char(' ') => {
+                        self.checked[self.selected] = !self.checked[self.selected];
+                    }
+                    KeyCode::Char('a') => self.checked.iter_mut().for_each(|c| *c = true),
+                    KeyCode::Char('n') => self.checked.iter_mut().for_each(|c| *c = false),
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        self.selected =
+                            (self.selected + self.choices.len() - 1) % self.choices.len();
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        self.selected = (self.selected + 1) % self.choices.len();
+                    }
+                    KeyCode::Home => self.selected = 0,
+                    KeyCode::End => self.selected = self.choices.len() - 1,
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn draw(&self, frame: &mut ratatui::Frame<'_>) {
+        let area = frame.area();
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Min(0),
+                Constraint::Length(1),
+            ])
+            .split(area);
+
+        let intro = Paragraph::new(self.intro)
+            .block(Block::default().borders(Borders::ALL).title(self.title))
+            .wrap(Wrap { trim: false });
+        frame.render_widget(intro, rows[0]);
+
+        let columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
+            .split(rows[1]);
+
+        let items: Vec<ListItem<'static>> = self
+            .choices
+            .iter()
+            .zip(&self.checked)
+            .map(|(choice, checked)| {
+                let box_ = if *checked { "[x]" } else { "[ ]" };
+                ListItem::new(Line::from(vec![
+                    Span::styled(format!("{box_} "), Style::default().fg(Color::Cyan)),
+                    Span::styled(
+                        format!("{} ", choice.marker),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                    Span::raw(choice.label.clone()),
+                ]))
+            })
+            .collect();
+        let mut state = ListState::default();
+        state.select(Some(self.selected));
+        let list = List::new(items)
+            .block(Block::default().borders(Borders::ALL).title(format!(
+                "{} of {} selected",
+                self.checked.iter().filter(|c| **c).count(),
+                self.choices.len()
+            )))
+            .highlight_style(
+                Style::default()
+                    .bg(Color::White)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("> ");
+        frame.render_stateful_widget(list, columns[0], &mut state);
+
+        let detail = Paragraph::new(self.choices[self.selected].detail.as_str())
+            .block(Block::default().borders(Borders::ALL).title("About"))
+            .wrap(Wrap { trim: false });
+        frame.render_widget(detail, columns[1]);
+
+        let help = Paragraph::new(Line::from(vec![Span::styled(
+            " Space toggle · a all · n none · ↑↓/jk move · Enter continue · Esc cancel",
+            Style::default().fg(Color::DarkGray),
+        )]));
+        frame.render_widget(help, rows[2]);
+    }
+}

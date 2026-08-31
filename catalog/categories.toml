@@ -1,0 +1,335 @@
+# What the wizard walks through, in order. Navigators first — the wizard treats the
+# `directories` category as step 0 and offers to install and wire yazi/broot. Within a
+# category the first choice is the recommendation. `$EDITOR`, `$TERMINAL` and `open` are
+# assumed rather than installed.
+
+[[category]]
+id = "directories"
+title = "Folders"
+summary = "What Enter on a folder offers. yazi and broot are the navigators that open files through this menu."
+kind = "folder"
+[[category.choice]]
+tool = "yazi"
+label = "Browse in yazi"
+run = "yazi {path}"
+icon = "[yazi]"
+[[category.choice]]
+tool = "broot"
+label = "Browse in broot"
+run = "broot {path}"
+icon = "[broot]"
+[[category.choice]]
+tool = "gitui"
+label = "Git UI"
+description = "gitui in this folder"
+run = "sh -c 'cd \"$1\" && gitui' _ {path}"
+icon = "[git]"
+platform = "unix"
+[[category.choice]]
+tool = "lazygit"
+label = "lazygit"
+run = "lazygit -p {path}"
+icon = "[git]"
+[[category.choice]]
+tool = "$TERMINAL"
+label = "Open in a new terminal"
+run = "true"
+icon = "[term]"
+[[category.choice]]
+tool = "$EDITOR"
+label = "Open in editor"
+run = "${EDITOR:-micro} {path}"
+icon = "[edit]"
+platform = "unix"
+
+[[category]]
+id = "markdown"
+title = "Markdown"
+summary = "README.md and notes."
+extensions = ["md", "markdown"]
+[[category.choice]]
+tool = "glow"
+label = "Render Markdown"
+description = "Rendered view in glow"
+run = "glow -p {path}"
+icon = "[md]"
+[[category.choice]]
+tool = "mdfried"
+label = "Render with images"
+description = "mdfried: images and big headers via terminal graphics"
+run = "mdfried {path}"
+icon = "[md]"
+[[category.choice]]
+tool = "$EDITOR"
+label = "Edit"
+run = "${EDITOR:-micro} {path}"
+icon = "[edit]"
+platform = "unix"
+
+[[category]]
+id = "word"
+title = "Word documents"
+extensions = ["docx"]
+[[category.choice]]
+tool = "doxx"
+label = "View Word document"
+run = "doxx {path}"
+icon = "[docx]"
+[[category.choice]]
+tool = "open"
+label = "Open in default app"
+run = "xdg-open {path}"
+icon = "[open]"
+detach = true
+platform = "linux"
+
+[[category]]
+id = "spreadsheets"
+title = "Spreadsheets"
+extensions = ["xlsx", "xls"]
+[[category.choice]]
+tool = "xleak"
+label = "View spreadsheet"
+run = "xleak -i {path}"
+icon = "[xlsx]"
+[[category.choice]]
+tool = "open"
+label = "Open in default app"
+run = "xdg-open {path}"
+icon = "[open]"
+detach = true
+platform = "linux"
+
+[[category]]
+id = "csv"
+title = "CSV / TSV"
+extensions = ["csv", "tsv"]
+[[category.choice]]
+tool = "xan"
+label = "View CSV with xan"
+description = "Paged table; -A lifts the row cap"
+run = "xan view -p -A {path}"
+icon = "[xan]"
+[[category.choice]]
+tool = "csvi"
+label = "Edit in csvi"
+description = "Spreadsheet-style editor"
+run = "csvi {path}"
+icon = "[csv]"
+[[category.choice]]
+tool = "$EDITOR"
+label = "Edit"
+run = "${EDITOR:-micro} {path}"
+icon = "[edit]"
+platform = "unix"
+
+[[category]]
+id = "env"
+title = ".env files"
+name_patterns = [".env", ".env.*", "*.env"]
+[[category.choice]]
+tool = "lazyenv"
+label = "Edit env"
+description = "lazyenv scans the containing directory"
+run = "lazyenv {dir}"
+icon = "[env]"
+[[category.choice]]
+tool = "$EDITOR"
+label = "Edit"
+run = "${EDITOR:-micro} {path}"
+icon = "[edit]"
+platform = "unix"
+
+[[category]]
+id = "html"
+title = "HTML"
+extensions = ["html", "htm"]
+[[category.choice]]
+tool = "lynx"
+label = "Open in Lynx"
+run = "lynx {path}"
+icon = "[lynx]"
+[[category.choice]]
+tool = "carbonyl"
+label = "Open in Carbonyl"
+description = "Chromium in the terminal"
+run = "carbonyl {path}"
+icon = "[web]"
+[[category.choice]]
+tool = "open"
+label = "Open in browser"
+run = "xdg-open {path}"
+icon = "[open]"
+detach = true
+platform = "linux"
+[[category.choice]]
+tool = "$EDITOR"
+label = "Edit"
+run = "${EDITOR:-micro} {path}"
+icon = "[edit]"
+platform = "unix"
+
+[[category]]
+id = "sql"
+title = "SQL"
+extensions = ["sql"]
+[[category.choice]]
+tool = "harlequin"
+label = "Open in SQL IDE"
+run = "harlequin {path}"
+icon = "[sql]"
+[[category.choice]]
+tool = "$EDITOR"
+label = "Edit"
+run = "${EDITOR:-micro} {path}"
+icon = "[edit]"
+platform = "unix"
+
+[[category]]
+id = "json"
+title = "JSON"
+extensions = ["json", "jsonl"]
+[[category.choice]]
+tool = "jless"
+label = "View JSON"
+description = "Folding and search"
+run = "jless {path}"
+icon = "[json]"
+[[category.choice]]
+tool = "fx"
+label = "Explore in fx"
+run = "fx {path}"
+icon = "[json]"
+[[category.choice]]
+tool = "$EDITOR"
+label = "Edit"
+run = "${EDITOR:-micro} {path}"
+icon = "[edit]"
+platform = "unix"
+
+[[category]]
+id = "text"
+title = "Code and plain text"
+summary = "Everything the other categories do not claim."
+extensions = ["txt", "yaml", "yml", "toml", "rs", "py", "js", "ts", "sh", "go", "c", "h", "cpp", "java", "rb", "lua", "css", "xml", "ini", "conf", "cfg"]
+[[category.choice]]
+tool = "$EDITOR"
+label = "Edit"
+run = "${EDITOR:-micro} {path}"
+icon = "[edit]"
+platform = "unix"
+[[category.choice]]
+tool = "micro"
+label = "Edit in micro"
+run = "micro {path}"
+icon = "[edit]"
+[[category.choice]]
+tool = "helix"
+label = "Edit in helix"
+run = "hx {path}"
+icon = "[edit]"
+[[category.choice]]
+tool = "neovim"
+label = "Edit in neovim"
+run = "nvim {path}"
+icon = "[edit]"
+
+[[category]]
+id = "images"
+title = "Images"
+extensions = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]
+[[category.choice]]
+tool = "chafa"
+label = "View with chafa"
+run = "chafa {path}"
+icon = "[img]"
+[[category.choice]]
+tool = "viu"
+label = "View with viu"
+run = "viu {path}"
+icon = "[img]"
+[[category.choice]]
+tool = "timg"
+label = "View with timg"
+run = "timg {path}"
+icon = "[img]"
+[[category.choice]]
+tool = "open"
+label = "Open in default viewer"
+run = "xdg-open {path}"
+icon = "[open]"
+detach = true
+platform = "linux"
+
+[[category]]
+id = "video"
+title = "Video"
+extensions = ["mp4", "mkv", "webm", "mov", "avi"]
+[[category.choice]]
+tool = "mpv"
+label = "Play in mpv"
+run = "mpv {path}"
+icon = "[video]"
+detach = true
+[[category.choice]]
+tool = "mpv"
+label = "Play as text (mpv --vo=tct)"
+run = "mpv --vo=tct {path}"
+icon = "[video]"
+[[category.choice]]
+tool = "timg"
+label = "Play with timg"
+run = "timg {path}"
+icon = "[video]"
+
+[[category]]
+id = "archives"
+title = "Archives"
+extensions = ["zip", "tar", "gz", "tgz", "xz", "zst", "7z", "rar", "bz2"]
+[[category.choice]]
+tool = "ouch"
+label = "List contents"
+run = "ouch list {path}"
+icon = "[zip]"
+[[category.choice]]
+tool = "ouch"
+label = "Extract here"
+run = "ouch decompress {path} --dir {dir}"
+icon = "[zip]"
+
+[[category]]
+id = "logs"
+title = "Logs"
+extensions = ["log"]
+[[category.choice]]
+tool = "lnav"
+label = "Open in lnav"
+run = "lnav {path}"
+icon = "[log]"
+[[category.choice]]
+tool = "tailspin"
+label = "Highlight with tailspin"
+run = "tspin {path}"
+icon = "[log]"
+
+[[category]]
+id = "docker"
+title = "Docker Compose"
+name_patterns = ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"]
+[[category.choice]]
+tool = "lazydocker"
+label = "Open lazydocker"
+run = "sh -c 'cd \"$1\" && lazydocker' _ {dir}"
+icon = "[docker]"
+platform = "unix"
+[[category.choice]]
+tool = "ducker"
+label = "Open ducker"
+run = "ducker"
+icon = "[docker]"
+[[category.choice]]
+tool = "$EDITOR"
+label = "Edit"
+run = "${EDITOR:-micro} {path}"
+icon = "[edit]"
+platform = "unix"
