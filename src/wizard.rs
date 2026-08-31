@@ -59,8 +59,11 @@ pub fn run(config_path: &Path, options: Options) -> Result<i32> {
     let ask = interactive && !options.yes;
 
     // Step 0: navigators.
+    // broot's Enter verb needs `sh`, which broot on Windows does not run through; the
+    // wizard offers only what `broot apply` would accept there.
     let navigator_tools: Vec<&Tool> = ["yazi", "broot"]
         .iter()
+        .filter(|name| host != Host::Windows || **name != "broot")
         .filter_map(|name| catalog.tool(name))
         .collect();
     let navigator_choices: Vec<menu::Choice> = navigator_tools
@@ -309,7 +312,7 @@ pub fn build_plan(
                 if !ASSUMED.contains(&choice.tool.as_str()) {
                     wanted_tools.insert(choice.tool.clone());
                 }
-                command_for(choice)
+                command_for(choice, host)
             })
             .collect();
 
@@ -353,17 +356,19 @@ pub fn build_plan(
     plan
 }
 
-fn command_for(choice: &Choice) -> CommandEntry {
-    // `$TERMINAL` choices run in a new terminal window, resolved per OS at run time.
+fn command_for(choice: &Choice, host: Host) -> CommandEntry {
+    // `$TERMINAL` choices open a new terminal window in the folder (`cwd = "{path}"` is
+    // rendered by the runner) running an interactive shell: `${SHELL:-sh}` is sh syntax,
+    // so Windows gets `cmd`.
     let terminal = choice.tool == "$TERMINAL";
     CommandEntry {
         label: choice.label.clone(),
         description: choice.description.clone(),
         icon: choice.icon.clone(),
-        run: if terminal {
-            "${SHELL:-sh}".to_string()
-        } else {
-            choice.run.clone()
+        run: match (terminal, host) {
+            (true, Host::Windows) => "cmd".to_string(),
+            (true, _) => "${SHELL:-sh}".to_string(),
+            (false, _) => choice.run.clone(),
         },
         cwd: terminal.then(|| "{path}".to_string()),
         detach: choice.detach,
@@ -577,6 +582,12 @@ mod tests {
             "$TERMINAL choices become terminal = true"
         );
         assert_eq!(terminal.cwd.as_deref(), Some("{path}"));
+        assert_eq!(terminal.run, "${SHELL:-sh}");
+        assert_eq!(
+            command_for(&folders.choices[4], Host::Windows).run,
+            "cmd",
+            "sh syntax has no place on Windows"
+        );
         assert_eq!(plan.config.extension[0].extensions, ["csv", "tsv"]);
         assert_eq!(
             plan.config.association[0].match_rule.name_patterns,

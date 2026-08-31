@@ -4,8 +4,9 @@
 //! which is Linux-only and only right for ghostty. Every terminal spells "start in this
 //! directory and run this" differently, so the spelling lives here, keyed by the
 //! program's name: `$TERMINAL` if set, otherwise the first known terminal on `PATH`.
-//! macOS goes through Terminal.app via osascript; Windows through Windows Terminal, or
-//! `start cmd` without it.
+//! macOS uses the same spellings for the terminals that have a CLI (ghostty, kitty,
+//! alacritty, wezterm …) and goes through osascript only for Terminal.app; Windows goes
+//! through Windows Terminal, or `start cmd` without it.
 
 use std::path::Path;
 
@@ -15,7 +16,7 @@ use crate::platform::Host;
 use crate::runner::find_executable;
 use crate::shell::Shell;
 
-/// Linux terminals tried in order when `$TERMINAL` is unset.
+/// Terminals tried in order when `$TERMINAL` is unset, on Linux and the BSDs.
 const LINUX_CANDIDATES: &[&str] = &["ghostty", "foot", "kitty", "alacritty", "wezterm", "xterm"];
 
 /// A command line that opens a new terminal in `cwd` running `command`.
@@ -24,10 +25,12 @@ pub fn wrap(command: &str, cwd: Option<&Path>) -> Result<String> {
     let program = match host {
         Host::Windows => std::env::var("TERMINAL")
             .ok()
+            .filter(|t| !t.is_empty())
             .or_else(|| find_executable("wt").map(|_| "wt".to_string()))
             .unwrap_or_else(|| "cmd".to_string()),
         Host::Macos => std::env::var("TERMINAL")
             .ok()
+            .filter(|t| !t.is_empty())
             .unwrap_or_else(|| "Terminal".to_string()),
         _ => match std::env::var("TERMINAL") {
             Ok(terminal) if !terminal.is_empty() => terminal,
@@ -43,20 +46,25 @@ pub fn wrap(command: &str, cwd: Option<&Path>) -> Result<String> {
 
 /// The pure part: how `program` is told to open in `cwd` and run `command`.
 pub fn wrap_for(host: Host, program: &str, command: &str, cwd: Option<&Path>) -> Result<String> {
-    let shell = Shell::current();
     let cwd_str = cwd.map(|p| p.display().to_string());
 
     match host {
         Host::Windows => {
-            let dir = cwd_str.as_deref().map(|d| shell.quote(d)).transpose()?;
+            let dir = cwd_str
+                .as_deref()
+                .map(|d| Shell::Cmd.quote(d))
+                .transpose()?;
             let name = Path::new(program)
                 .file_stem()
                 .map(|s| s.to_string_lossy().to_lowercase())
                 .unwrap_or_default();
+            // The command is one quoted argument to `cmd /k` in both spellings: the
+            // whole line goes through cmd once more on the way out, so a bare `&&` or
+            // `|` in it would be cut off there instead of reaching the new window.
             Ok(if name == "wt" {
                 match dir {
-                    Some(dir) => format!("wt -d {dir} cmd /k {command}"),
-                    None => format!("wt cmd /k {command}"),
+                    Some(dir) => format!("wt -d {dir} cmd /k \"{command}\""),
+                    None => format!("wt cmd /k \"{command}\""),
                 }
             } else {
                 match dir {
@@ -65,59 +73,65 @@ pub fn wrap_for(host: Host, program: &str, command: &str, cwd: Option<&Path>) ->
                 }
             })
         }
-        Host::Macos => {
-            // Terminal.app (or iTerm) runs the line in a fresh shell via AppleScript.
+        Host::Macos if is_terminal_app(program) => {
+            // Terminal.app runs the line in a fresh shell via AppleScript.
             let script = match &cwd_str {
                 Some(dir) => format!("cd {} && {command}", Shell::Posix.quote(dir)?),
                 None => command.to_string(),
             };
-            let app = if program.is_empty() {
-                "Terminal"
-            } else {
-                program
-            };
             Ok(format!(
                 "osascript -e {}",
                 Shell::Posix.quote(&format!(
-                    "tell application \"{}\" to do script \"{}\"",
-                    applescript_escape(app),
+                    "tell application \"Terminal\" to do script \"{}\"",
                     applescript_escape(&script)
                 ))?
             ))
         }
-        Host::Linux | Host::OtherUnix => {
-            if program.is_empty() {
-                bail!(
-                    "no terminal found: set $TERMINAL, or install one of {}",
-                    LINUX_CANDIDATES.join(", ")
-                );
-            }
-            let run = format!("sh -c {}", Shell::Posix.quote(command)?);
-            let name = Path::new(program)
-                .file_name()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| program.to_string());
-            let dir = cwd_str
-                .as_deref()
-                .map(|d| Shell::Posix.quote(d))
-                .transpose()?;
-            Ok(match (name.as_str(), dir) {
-                ("ghostty", Some(dir)) => format!("{program} --working-directory={dir} -e {run}"),
-                ("foot", Some(dir)) => format!("{program} --working-directory={dir} {run}"),
-                ("kitty", Some(dir)) => format!("{program} --directory {dir} {run}"),
-                ("alacritty", Some(dir)) => format!("{program} --working-directory {dir} -e {run}"),
-                ("wezterm", Some(dir)) => format!("{program} start --cwd {dir} -- {run}"),
-                ("wezterm", None) => format!("{program} start -- {run}"),
-                ("foot", None) | ("kitty", None) => format!("{program} {run}"),
-                // xterm and anything unknown: -e is the convention; cd inside the shell.
-                (_, Some(dir)) => format!(
-                    "{program} -e sh -c {}",
-                    Shell::Posix.quote(&format!("cd {dir} && {command}"))?
-                ),
-                (_, None) => format!("{program} -e {run}"),
-            })
+        // Everything else with a CLI — ghostty, kitty, alacritty, wezterm, foot, xterm —
+        // takes the same flags on macOS as on Linux.
+        Host::Macos | Host::Linux | Host::OtherUnix => {
+            unix_spelling(program, command, cwd_str.as_deref())
         }
     }
+}
+
+/// Terminal.app, by any of its spellings: unset, `Terminal`, `Terminal.app`, a full path
+/// to the bundle.
+fn is_terminal_app(program: &str) -> bool {
+    program.is_empty()
+        || Path::new(program.trim_end_matches('/'))
+            .file_stem()
+            .is_some_and(|stem| stem.to_string_lossy().eq_ignore_ascii_case("terminal"))
+}
+
+fn unix_spelling(program: &str, command: &str, cwd: Option<&str>) -> Result<String> {
+    if program.is_empty() {
+        bail!(
+            "no terminal found: set $TERMINAL, or install one of {}",
+            LINUX_CANDIDATES.join(", ")
+        );
+    }
+    let run = format!("sh -c {}", Shell::Posix.quote(command)?);
+    let name = Path::new(program)
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| program.to_string());
+    let dir = cwd.map(|d| Shell::Posix.quote(d)).transpose()?;
+    Ok(match (name.as_str(), dir) {
+        ("ghostty", Some(dir)) => format!("{program} --working-directory={dir} -e {run}"),
+        ("foot", Some(dir)) => format!("{program} --working-directory={dir} {run}"),
+        ("kitty", Some(dir)) => format!("{program} --directory {dir} {run}"),
+        ("alacritty", Some(dir)) => format!("{program} --working-directory {dir} -e {run}"),
+        ("wezterm", Some(dir)) => format!("{program} start --cwd {dir} -- {run}"),
+        ("wezterm", None) => format!("{program} start -- {run}"),
+        ("foot", None) | ("kitty", None) => format!("{program} {run}"),
+        // xterm and anything unknown: -e is the convention; cd inside the shell.
+        (_, Some(dir)) => format!(
+            "{program} -e sh -c {}",
+            Shell::Posix.quote(&format!("cd {dir} && {command}"))?
+        ),
+        (_, None) => format!("{program} -e {run}"),
+    })
 }
 
 fn applescript_escape(text: &str) -> String {
@@ -177,28 +191,66 @@ mod tests {
     }
 
     #[test]
-    fn macos_goes_through_applescript_with_quotes_escaped() {
-        let line = wrap_for(Host::Macos, "Terminal", "echo \"hi\"", Some(&dir())).unwrap();
-        assert!(line.starts_with("osascript -e "), "{line}");
-        assert!(
-            line.contains(r#"tell application "Terminal" to do script"#),
-            "{line}"
+    fn macos_terminal_app_goes_through_applescript_with_quotes_escaped() {
+        for program in [
+            "",
+            "Terminal",
+            "Terminal.app",
+            "/System/Applications/Utilities/Terminal.app",
+        ] {
+            let line = wrap_for(Host::Macos, program, "echo \"hi\"", Some(&dir())).unwrap();
+            assert!(line.starts_with("osascript -e "), "{program}: {line}");
+            assert!(
+                line.contains(r#"tell application "Terminal" to do script"#),
+                "{program}: {line}"
+            );
+            assert!(
+                line.contains(r#"cd '\''/home/u/my proj'\'' && echo \"hi\""#),
+                "{program}: {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn macos_terminals_with_a_cli_use_their_own_flags_not_applescript() {
+        // `$TERMINAL=kitty` on a Mac used to become `tell application "kitty"`, which
+        // AppleScript cannot drive; the CLI flags are the same as on Linux.
+        assert_eq!(
+            wrap_for(Host::Macos, "kitty", "gitui", Some(&dir())).unwrap(),
+            "kitty --directory '/home/u/my proj' sh -c gitui"
         );
-        assert!(
-            line.contains(r#"cd '\''/home/u/my proj'\'' && echo \"hi\""#),
-            "{line}"
+        assert_eq!(
+            wrap_for(
+                Host::Macos,
+                "/Applications/Ghostty.app/Contents/MacOS/ghostty",
+                "gitui",
+                None
+            )
+            .unwrap(),
+            "/Applications/Ghostty.app/Contents/MacOS/ghostty -e sh -c gitui"
         );
     }
 
     #[test]
     fn windows_prefers_windows_terminal_and_falls_back_to_start() {
-        // Quoting here follows the build host's shell; the shape is what matters.
-        let wt = wrap_for(Host::Windows, "wt", "gitui", Some(Path::new(r"C:\proj"))).unwrap();
-        assert!(wt.starts_with("wt -d "), "{wt}");
-        assert!(wt.ends_with(" cmd /k gitui"), "{wt}");
+        let wt = wrap_for(
+            Host::Windows,
+            "wt",
+            "cargo build && cargo test",
+            Some(Path::new(r"C:\proj")),
+        )
+        .unwrap();
+        assert_eq!(wt, r#"wt -d C:\proj cmd /k "cargo build && cargo test""#);
+        assert_eq!(
+            wrap_for(Host::Windows, "wt", "gitui", Some(Path::new(r"C:\my proj"))).unwrap(),
+            r#"wt -d "C:\my proj" cmd /k "gitui""#
+        );
 
         let cmd = wrap_for(Host::Windows, "cmd", "gitui", Some(Path::new(r"C:\proj"))).unwrap();
-        assert!(cmd.starts_with("start \"\" cmd /k \"cd /d "), "{cmd}");
-        assert!(cmd.ends_with(" && gitui\""), "{cmd}");
+        assert_eq!(cmd, r#"start "" cmd /k "cd /d C:\proj && gitui""#);
+        assert_eq!(
+            wrap_for(Host::Windows, "cmd", "gitui", None).unwrap(),
+            r#"start "" cmd /k "gitui""#
+        );
     }
 }

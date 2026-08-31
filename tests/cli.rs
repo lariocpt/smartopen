@@ -262,12 +262,13 @@ fn wizard_yes_no_install_writes_a_config_doctor_accepts() {
         sandbox.config_dir().join("yazi").join("yazi.toml")
     };
     assert!(yazi_toml.is_file(), "{}", yazi_toml.display());
-    assert!(
-        sandbox
-            .config_dir()
-            .join("broot")
-            .join("smartopen.hjson")
-            .is_file()
+    // broot integration is not offered on Windows (the Enter verb needs `sh`).
+    let broot_verbs = sandbox.config_dir().join("broot").join("smartopen.hjson");
+    assert_eq!(
+        broot_verbs.is_file(),
+        !cfg!(windows),
+        "{}",
+        broot_verbs.display()
     );
 }
 
@@ -340,6 +341,16 @@ fn yazi_print_is_toml_and_broot_print_is_json() {
     let doc: toml::Value = toml::from_str(std::str::from_utf8(&yazi).unwrap()).unwrap();
     assert!(doc.get("opener").is_some() && doc.get("open").is_some());
 
+    if cfg!(windows) {
+        // Refused there, with the reason: broot runs verbs without a shell.
+        sandbox
+            .cmd("opn")
+            .args(["broot", "print"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("Windows"));
+        return;
+    }
     let broot = sandbox
         .cmd("opn")
         .args(["broot", "print"])
@@ -386,6 +397,17 @@ fn yazi_and_broot_check_apply_check_round_trip_in_a_temp_target() {
         .success();
 
     let broot_dir = sandbox.path().join("broot");
+    if cfg!(windows) {
+        sandbox
+            .smartopen()
+            .args(["broot", "apply", "--target"])
+            .arg(&broot_dir)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("Windows"));
+        assert!(!broot_dir.exists(), "nothing may be written when refused");
+        return;
+    }
     sandbox
         .smartopen()
         .args(["broot", "apply", "--target"])
@@ -501,7 +523,16 @@ fn several_targets_render_paths() {
 #[test]
 fn doctor_json_has_a_status_per_command_and_list_json_omits_empty_sections() {
     let sandbox = Sandbox::new();
-    sandbox.write_config("[[shortcut]]\nlabel = \"Dyn\"\nrun = \"${EDITOR:-nano}\"\n");
+    // A program only known at run time, spelled for this OS's shell: `${…}` is a
+    // variable to `sh` and a missing program to `cmd`, which reads only `%VAR%`.
+    let dynamic = if cfg!(windows) {
+        "%EDITOR% --wait"
+    } else {
+        "${EDITOR:-nano}"
+    };
+    sandbox.write_config(&format!(
+        "[[shortcut]]\nlabel = \"Dyn\"\nrun = \"{dynamic}\"\n"
+    ));
     let out = sandbox
         .smartopen()
         .args(["config", "doctor", "--json"])
@@ -536,4 +567,59 @@ fn tools_list_runs_and_names_the_navigators() {
         .assert()
         .success()
         .stdout(predicate::str::contains("yazi").and(predicate::str::contains("broot")));
+}
+
+#[test]
+fn the_readme_deploy_example_runs_a_parameter_named_like_a_placeholder() {
+    // `{{host}}` contains `{host}`; the renderer must read it as the parameter.
+    let sandbox = Sandbox::new();
+    sandbox.write_config(
+        "[[shortcut]]\nlabel = \"Deploy\"\nrun = \"ssh {{host}} 'systemctl restart app'\"\n[shortcut.param.host]\ndefault = \"web-1\"\n",
+    );
+    // `web-1` needs no quoting on either shell; the rest is the template verbatim.
+    let want = "ssh web-1 'systemctl restart app'\n";
+    sandbox
+        .smartopen()
+        .args([
+            "--command",
+            "Deploy",
+            "--param",
+            "host=web-1",
+            "--print",
+            "--no-history",
+        ])
+        .assert()
+        .success()
+        .stdout(want);
+}
+
+#[test]
+fn a_file_named_like_a_placeholder_is_quoted_once() {
+    let sandbox = Sandbox::new();
+    sandbox.write_config(&csv_config("echo {path}"));
+    let dir = sandbox.path().join("{dir}");
+    fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("it {name}.csv");
+    fs::write(&file, "a\n").unwrap();
+
+    let out = sandbox
+        .smartopen()
+        .arg("--dry-run")
+        .arg(&file)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let printed = String::from_utf8(out).unwrap();
+    // One quoted value, braces intact, nothing substituted inside it.
+    let quote = if cfg!(windows) { '"' } else { '\'' };
+    assert!(
+        printed.contains(&format!(
+            "{{dir}}{}it {{name}}.csv{quote}",
+            std::path::MAIN_SEPARATOR
+        )),
+        "{printed}"
+    );
+    assert_eq!(printed.matches(quote).count(), 2, "{printed}");
 }

@@ -10,9 +10,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 
 use crate::engine::{self, Engine};
+use crate::platform::Host;
 use crate::spec::{self, RawSpec, Spec};
 use crate::{broot, diff, paths, render, tomlio};
 
@@ -138,6 +139,14 @@ fn yazi(action: Action, options: &Options, effective: &Spec) -> Result<i32> {
 }
 
 fn broot_cmd(action: Action, options: &Options, effective: &Spec) -> Result<i32> {
+    // broot runs a verb's `external` without a shell, and the Enter verb is an `sh -c`
+    // dispatcher with no cmd equivalent. Refusing beats writing a verb that binds Enter
+    // to a program Windows does not have.
+    if Host::current() == Host::Windows {
+        bail!(
+            "broot integration is not available on Windows: broot runs verbs without a shell, and the smartopen verb needs `sh`"
+        );
+    }
     let dir = match &options.target {
         Some(path) => path.clone(),
         None => {
@@ -279,6 +288,14 @@ mod tests {
             target: Some(dir.clone()),
             ..Options::default()
         };
+
+        if cfg!(windows) {
+            // Refused there: broot runs verbs without a shell and the Enter verb needs `sh`.
+            let error = run(Navigator::Broot, Action::Check, &options).unwrap_err();
+            assert!(error.to_string().contains("Windows"), "{error}");
+            let _ = fs::remove_dir_all(dir);
+            return;
+        }
 
         assert_eq!(run(Navigator::Broot, Action::Check, &options).unwrap(), 1);
         run(

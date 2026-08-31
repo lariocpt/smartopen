@@ -43,9 +43,17 @@ pub fn state_path() -> Option<PathBuf> {
     Some(base?.join(APP_DIR).join("state.toml"))
 }
 
-/// yazi's `yazi.toml`: `~/.config/yazi/yazi.toml` on Unix and macOS,
-/// `%APPDATA%\yazi\config\yazi.toml` on Windows.
+/// yazi's `yazi.toml`: `$YAZI_CONFIG_HOME/yazi.toml` when that is set to an absolute path
+/// (yazi honours it on every OS and ignores a relative one), otherwise
+/// `~/.config/yazi/yazi.toml` on Unix and macOS, `%APPDATA%\yazi\config\yazi.toml` on
+/// Windows. Resolving the way yazi does is the point: a file written where yazi never
+/// looks is worse than an error.
 pub fn yazi_config_path() -> Option<PathBuf> {
+    if let Some(explicit) = env::var_os("YAZI_CONFIG_HOME").map(PathBuf::from)
+        && explicit.is_absolute()
+    {
+        return Some(explicit.join("yazi.toml"));
+    }
     let base = config_base()?.join("yazi");
     #[cfg(windows)]
     let base = base.join("config");

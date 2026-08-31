@@ -109,6 +109,9 @@ jobs:
         with:
           ref: refs/tags/${{ needs.gate.outputs.tag }}
           changelog: CHANGELOG.md
+          # An -rc tag has no section of its own; the gate already proved the base
+          # version's section exists, and a rehearsal may publish with empty notes.
+          allow-missing-changelog: ${{ needs.gate.outputs.prerelease }}
           draft: true
           prefix: v
           title: smartopen $version
@@ -222,8 +225,10 @@ jobs:
           - { os: windows-latest,   target: x86_64-pc-windows-msvc }
           - { os: windows-11-arm,   target: aarch64-pc-windows-msvc }
     runs-on: ${{ matrix.os }}
+    # The release is still a draft here, and GitHub shows drafts only to a token with
+    # push access — the same reason `checksums` has it. The token never leaves `gh`.
     permissions:
-      contents: read
+      contents: write
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ needs.gate.outputs.tag }}
@@ -234,10 +239,14 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           set -eux
-          d=$(mktemp -d)
+          # pwd -P: macOS mktemp lives under /var, which is a symlink to /private/var, and
+          # the binary prints canonical paths, so compare against the physical one.
+          d=$(cd "$(mktemp -d)" && pwd -P)
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$d" --pattern "smartopen-$TARGET-*.tar.gz" --pattern SHA256SUMS
           cd "$d"
-          grep "smartopen-$TARGET-" SHA256SUMS | sha256sum -c -
+          grep "smartopen-$TARGET-" SHA256SUMS > want.sum
+          # macOS runners ship no coreutils: shasum is the sha256sum there.
+          if command -v sha256sum >/dev/null; then sha256sum -c want.sum; else shasum -a 256 -c want.sum; fi
           tar xzf smartopen-$TARGET-*.tar.gz
           ./smartopen --version | grep -F "smartopen $VERSION"
           ./opn --version | grep -F "smartopen $VERSION"
@@ -301,7 +310,9 @@ jobs:
           persist-credentials: false
       - run: |
           set -eux
-          d=$(mktemp -d)
+          # pwd -P: macOS mktemp lives under /var, which is a symlink to /private/var, and
+          # the binary prints canonical paths, so compare against the physical one.
+          d=$(cd "$(mktemp -d)" && pwd -P)
           SMARTOPEN_REPO="$GITHUB_REPOSITORY" sh docs/install.sh --prefix="$d"
           "$d/bin/smartopen" --version | grep -F "smartopen ${{ needs.gate.outputs.version }}"
           "$d/bin/opn" --version
