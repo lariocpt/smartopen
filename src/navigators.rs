@@ -264,7 +264,7 @@ mod tests {
 
         let written = fs::read_to_string(dir.join("yazi.toml")).unwrap();
         assert!(
-            written.contains("run = 'opn \"$@\"'"),
+            written.contains("run = 'opn %s'"),
             "delegates to the named bin:\n{written}"
         );
 

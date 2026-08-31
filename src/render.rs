@@ -51,7 +51,7 @@ fn push_comment(out: &mut String, indent: &str, doc: &str) {
 }
 
 fn render_run(r: &OpenerRun) -> String {
-    let mut parts = vec![format!("run = {}", toml_string(&r.run))];
+    let mut parts = vec![format!("run = {}", toml_string(&yazi_args(&r.run)))];
     if let Some(d) = &r.desc {
         parts.push(format!("desc = {}", basic(d)));
     }
@@ -74,6 +74,18 @@ fn render_rule(r: &OpenRule) -> String {
     };
     let uses: Vec<String> = r.use_openers.iter().map(|u| basic(u)).collect();
     format!("{{ {}, use = [{}] }}", matcher, uses.join(", "))
+}
+
+/// yazi 26 hands an opener its files through `%s` (every selected file, shell-escaped),
+/// not through `$@`/`$1`: `sh -c <run>` no longer receives them as positional arguments —
+/// yazi-core marks that path "TODO: remove" and the navigator test found `"$@"` empty.
+/// The spec keeps the POSIX spelling because broot really does pass positionals; this
+/// is where the yazi rendering translates it.
+fn yazi_args(run: &str) -> String {
+    run.replace("\"$@\"", "%s")
+        .replace("\"$1\"", "%s")
+        .replace("$@", "%s")
+        .replace("$1", "%s")
 }
 
 /// A TOML bare key if safe, otherwise a quoted basic string.
@@ -134,7 +146,12 @@ mod tests {
     fn fragment_uses_literal_strings_for_commands() {
         let frag = fragment(&Spec::builtin());
         // shell command keeps its double quotes via a literal single-quoted string
-        assert!(frag.contains(r#"run = 'mdfried "$@"'"#));
+        assert!(frag.contains(r#"run = 'mdfried %s'"#), "{frag}");
+        assert!(
+            frag.contains(r#"run = 'lazyenv "$(dirname %s)"'"#),
+            "{frag}"
+        );
+        assert!(!frag.contains("$@") && !frag.contains("$1"), "{frag}");
     }
 
     #[test]

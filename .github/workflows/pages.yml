@@ -1,0 +1,39 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths: ['docs/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Pages is not enabled on a private repository without a paid plan, so this
+    # would go red on every push to main until the repo is public. Skip until
+    # then; `enablement: true` below lets it configure itself when it runs.
+    if: ${{ github.event.repository.private == false }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # No build step on purpose: docs/index.html is a single self-contained file and
+      # docs/install.sh is the public installer, byte-for-byte what is served.
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deploy
+        uses: actions/deploy-pages@v4

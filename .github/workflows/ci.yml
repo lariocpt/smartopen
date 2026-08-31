@@ -1,28 +1,186 @@
-name: CI
+name: ci
 
 on:
   push:
-    branches: ["main"]
+    branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  test:
+  # Compile every target we ship, including the ones with no runner. `cargo clippy` does
+  # not link, so this needs no cross-linker and no C toolchain — the dependency tree is
+  # pure Rust with no build scripts.
+  lint:
+    name: clippy ${{ matrix.target }}
     runs-on: ubuntu-latest
-
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+          - x86_64-pc-windows-msvc
+          - aarch64-pc-windows-msvc
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: clippy
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --locked --target ${{ matrix.target }} --all-targets -- -D warnings
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: rustfmt }
+      - run: cargo fmt --check
 
-      - name: Run tests
-        run: cargo test --locked
+  # rust-version in Cargo.toml is 1.88 (let-chains). Check it on every OS, since the
+  # platform-specific code differs.
+  msrv:
+    name: msrv ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --locked --all-targets
 
-      - name: Run Clippy
-        run: cargo clippy --locked -- -D warnings
+  # L1 unit + L2 CLI, on all three OSes: the sandboxed CLI suite is where "works on
+  # Windows and macOS" becomes an assertion rather than a green compile.
+  test:
+    name: test ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked
+      - run: cargo build --locked
+
+      # The generated shell snippets must parse in the shells they target.
+      - name: shell snippets parse
+        if: runner.os != 'Windows'
+        run: |
+          set -eux
+          if ! command -v zsh >/dev/null; then sudo apt-get update && sudo apt-get install -y zsh; fi
+          ./target/debug/smartopen shell zsh  | zsh -n
+          ./target/debug/smartopen shell bash | bash -n
+          ./target/debug/opn shell bash | grep -q '_opn_widget'
+
+  # L3: real yazi, real broot, a real pty. Linux and macOS are required. The suite is
+  # cfg(unix) today, so the Windows job installs the tools and then runs nothing — it is
+  # advisory (continue-on-error) and honest about that; making the harness drive ConPTY is
+  # the first step to promoting it, recorded in AGENTS.md.
+  navigators:
+    name: navigators ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: install yazi and broot (macOS)
+        if: runner.os == 'macOS'
+        run: brew install yazi broot zsh
+
+      - name: install yazi and broot (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -eux
+          sudo apt-get update && sudo apt-get install -y zsh unzip
+          # Prebuilt release assets, not a source build: this job is about the file
+          # managers' behaviour, not compiling them.
+          tmp=$(mktemp -d)
+          gh release download --repo sxyazi/yazi --pattern 'yazi-x86_64-unknown-linux-gnu.zip' --dir "$tmp"
+          unzip -q "$tmp"/yazi-*.zip -d "$tmp/yazi"
+          sudo install -m0755 "$(find "$tmp/yazi" -type f -name yazi | head -1)" "$(find "$tmp/yazi" -type f -name ya | head -1)" /usr/local/bin/
+          gh release download --repo Canop/broot --pattern 'broot_*.zip' --dir "$tmp"
+          unzip -q "$tmp"/broot_*.zip -d "$tmp/broot"
+          # The zip carries every target; pick the x86_64 linux binary wherever it sits.
+          sudo install -m0755 "$(find "$tmp/broot" -type f -name broot -path '*x86_64*linux*' | head -1)" /usr/local/bin/broot
+          yazi --version && broot --version
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: install yazi and broot (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          winget install --id sxyazi.yazi --accept-source-agreements --accept-package-agreements --silent
+          winget install --id Dystroy.broot --accept-source-agreements --accept-package-agreements --silent
+          echo "$env:LOCALAPPDATA\Microsoft\WinGet\Links" >> $env:GITHUB_PATH
+
+      - run: cargo test --locked --test navigators -- --test-threads=1
+        env:
+          SMARTOPEN_NAVIGATOR_TESTS: "1"
+
+  # L4: five distributions, through the public installer, from a local archive.
+  distros:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+      - run: test/containers/run.sh
+
+  # The public installer is POSIX sh piped to whatever /bin/sh a stranger has.
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck dash
+      - run: |
+          set -eux
+          sh -n docs/install.sh
+          dash -n docs/install.sh
+          shellcheck -s sh docs/install.sh
+          sh -n test/containers/smoke.sh
+          dash -n test/containers/smoke.sh
+          shellcheck -s sh test/containers/smoke.sh
+          shellcheck test/containers/run.sh
+
+  # Native arm64. GitHub's arm runners are free for public repositories and unavailable
+  # on a private one, so this job sits out until the repo is public.
+  test-arm:
+    name: test ${{ matrix.os }}
+    if: ${{ github.event.repository.private == false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04-arm, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked
+      - run: cargo build --locked

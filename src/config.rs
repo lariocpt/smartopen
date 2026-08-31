@@ -707,7 +707,14 @@ mod tests {
 
         let labels: Vec<_> = merged.shortcut.iter().map(|s| s.label.as_str()).collect();
         assert_eq!(labels, ["Project", "User"]);
-        assert_eq!(merged.folder[0].paths, ["/repo/sub", "/abs", "~/x"]);
+        assert_eq!(
+            merged.folder[0].paths,
+            [
+                Path::new("/repo").join("sub").display().to_string(),
+                "/abs".to_string(),
+                "~/x".to_string()
+            ]
+        );
         assert_eq!(merged.folder[1].paths, ["a"], "user paths are untouched");
         assert_eq!(merged.menu.art_file, None, "[menu] is the user's");
     }

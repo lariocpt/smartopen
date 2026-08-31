@@ -1,0 +1,323 @@
+name: release
+
+# Tag-driven, not `release: published`. With a release trigger the release already
+# exists and is already `latest` before a single test has run, so a red gate cannot
+# un-publish it. A tag push means the only thing that exists until the gate is green
+# is the tag.
+#
+# ci.yml fires on push-to-main and pull_request — neither of which a tag push triggers.
+# So the gate is repeated here on purpose: without it, the one path that reaches the
+# public would be the one path with no tests in front of it.
+#
+# Draft first, un-draft last. Uploads happen INTO a release, so it has to exist before
+# the matrix runs; a draft is excluded from `latest` and its assets are not
+# downloadable, which makes flipping the draft bit the atomic step. Nobody's install
+# one-liner ever sees a release whose archives are still arriving.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re)publish, e.g. v0.2.0'
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.t.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.t.outputs.prerelease }}
+    steps:
+      - name: Resolve the tag
+        id: t
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          tag="${INPUT_TAG:-${GITHUB_REF#refs/tags/}}"
+          case "$tag" in
+            v[0-9]*) ;;
+            *) echo "::error::'$tag' is not a vX.Y.Z release tag"; exit 1 ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          case "$tag" in *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;; *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;; esac
+
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ steps.t.outputs.tag }}
+          persist-credentials: false
+
+      # `version` in Cargo.toml is the only version string in the project. If it and the
+      # tag disagree, the published artifact lies about itself: the release page,
+      # `smartopen --version`, crates.io and the LAN mirror would print different numbers
+      # for one set of bytes.
+      - name: Assert the tag matches Cargo.toml
+        id: v
+        env:
+          TAG: ${{ steps.t.outputs.tag }}
+        run: |
+          set -eu
+          v=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' Cargo.toml | head -1)
+          [ -n "$v" ] || { echo "::error::could not parse version from Cargo.toml"; exit 1; }
+          base=${TAG#v}; base=${base%%-*}       # v0.3.0-rc.1 -> 0.3.0
+          [ "$base" = "$v" ] || {
+            echo "::error file=Cargo.toml::tag $TAG claims $base, Cargo.toml says version = \"$v\""
+            exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      # The release notes are the changelog section, so a missing section is a missing
+      # release page. Failing here beats publishing an empty one.
+      - name: Release notes must exist
+        env:
+          TAG: ${{ steps.t.outputs.tag }}
+        run: |
+          set -eu
+          v=${TAG#v}; v=${v%%-*}
+          awk -v want="## [$v]" 'index($0, want) == 1 {found = 1} END {exit !found}' CHANGELOG.md \
+            || { echo "::error file=CHANGELOG.md::no '## [$v]' section for $TAG"; exit 1; }
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+
+  create-release:
+    needs: gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ needs.gate.outputs.tag }}
+          persist-credentials: false
+      - uses: taiki-e/create-gh-release-action@v1
+        with:
+          ref: refs/tags/${{ needs.gate.outputs.tag }}
+          changelog: CHANGELOG.md
+          draft: true
+          prefix: v
+          title: smartopen $version
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  upload:
+    needs: [gate, create-release]
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # musl-static is the recommended Linux download: it has no glibc floor at
+          # all, so it runs on Alpine and on old enterprise distros alike. (glibc
+          # symbol versioning is a floor, not a ceiling — build-old/run-new is safe
+          # and the reverse is not. Static musl removes the question entirely, which
+          # this dependency tree allows because it is pure Rust.)
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            tool: cross
+          # cross assumes an x86_64 host; this target is the arm runner's own
+          # architecture and Rust ships self-contained musl crt objects, so plain cargo.
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+            tool: cargo
+          # A glibc build too, on the oldest supported image for the lowest floor.
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+            tool: cargo
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            tool: cargo
+          # Build macOS on macOS: arm64 Mach-O needs a signature, even an ad-hoc one,
+          # and the linker only applies that on a Mac.
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            tool: cargo
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+            tool: cargo
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            tool: cargo
+          - target: aarch64-pc-windows-msvc
+            os: windows-11-arm
+            tool: cargo
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ needs.gate.outputs.tag }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: smartopen,opn
+          target: ${{ matrix.target }}
+          build-tool: ${{ matrix.tool }}
+          locked: true
+          include: README.md,LICENSE
+          archive: smartopen-$target-$tag
+          ref: refs/tags/${{ needs.gate.outputs.tag }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # One SHA256SUMS for all eight archives, generated from inside the directory so each
+  # line names an archive with no path component — `sha256sum -c` then works anywhere
+  # the file is, and docs/install.sh, the Jenkins mirror and a human all read it the
+  # same way. The archives and the sums file are attested, so the LAN mirror can prove
+  # they were built here from this tag without rebuilding them.
+  checksums:
+    needs: [gate, upload]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.gate.outputs.tag }}
+    steps:
+      - run: |
+          set -eu
+          mkdir dist
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist --pattern '*.tar.gz' --pattern '*.zip'
+          ( cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS && sha256sum -c SHA256SUMS )
+          cat dist/SHA256SUMS
+          [ "$(wc -l < dist/SHA256SUMS)" -eq 8 ] || { echo "::error::expected 8 archives, got $(wc -l < dist/SHA256SUMS)"; exit 1; }
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" dist/SHA256SUMS --clobber
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/*
+
+  # Download what a stranger downloads, on every runner that exists for a target. This is
+  # the only step that proves the PUBLISHED bytes work, not the local build that produced
+  # them. Still a draft here, so `gh` is needed to fetch; the un-draft below is gated on
+  # this passing.
+  smoke:
+    needs: [gate, checksums]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,    target: x86_64-unknown-linux-musl }
+          - { os: ubuntu-22.04,     target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
+          - { os: macos-latest,     target: aarch64-apple-darwin }
+          - { os: macos-15-intel,   target: x86_64-apple-darwin }
+          - { os: windows-latest,   target: x86_64-pc-windows-msvc }
+          - { os: windows-11-arm,   target: aarch64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.gate.outputs.tag }}
+      TARGET: ${{ matrix.target }}
+      VERSION: ${{ needs.gate.outputs.version }}
+    steps:
+      - name: download, verify, run (unix)
+        if: runner.os != 'Windows'
+        run: |
+          set -eux
+          d=$(mktemp -d)
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$d" --pattern "smartopen-$TARGET-*.tar.gz" --pattern SHA256SUMS
+          cd "$d"
+          grep "smartopen-$TARGET-" SHA256SUMS | sha256sum -c -
+          tar xzf smartopen-$TARGET-*.tar.gz
+          ./smartopen --version | grep -F "smartopen $VERSION"
+          ./opn --version | grep -F "smartopen $VERSION"
+          ./smartopen config sample > c.toml
+          ./smartopen --config-path c.toml config doctor >/dev/null
+          printf 'a,b\n' > "sp ace.csv"
+          printf '[[extension]]\nextensions = ["csv"]\n[[extension.command]]\nlabel = "E"\nrun = "echo {path}"\n' > q.toml
+          ./smartopen --config-path q.toml --dry-run "sp ace.csv" | grep -F "echo '$d/sp ace.csv'"
+      - name: download, verify, run (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $d = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP "smoke")
+          gh release download $env:TAG --repo $env:GITHUB_REPOSITORY --dir $d --pattern "smartopen-$env:TARGET-*.zip" --pattern SHA256SUMS
+          Set-Location $d
+          $zip = Get-ChildItem "smartopen-$env:TARGET-*.zip"
+          $want = (Select-String -Path SHA256SUMS -Pattern $zip.Name).Line.Split(' ')[0]
+          $got = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLower()
+          if ($want -ne $got) { throw "checksum mismatch: $want != $got" }
+          Expand-Archive $zip.FullName -DestinationPath .
+          $v = & .\smartopen.exe --version
+          if ($v -notmatch "smartopen $env:VERSION") { throw "wrong version: $v" }
+          & .\opn.exe --version
+          & .\smartopen.exe config sample | Out-File -Encoding utf8 c.toml
+          & .\smartopen.exe --config-path c.toml config doctor | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "doctor failed" }
+          'a,b' | Out-File -Encoding ascii 'sp ace.csv'
+          "[[extension]]`nextensions = [`"csv`"]`n[[extension.command]]`nlabel = `"E`"`nrun = `"echo {path}`"`n" | Out-File -Encoding ascii q.toml
+          $out = & .\smartopen.exe --config-path q.toml --dry-run 'sp ace.csv'
+          if ($out -notmatch 'echo "') { throw "spaced path not quoted for cmd: $out" }
+          if ($out -match '\\\\\?\\') { throw "UNC prefix leaked: $out" }
+
+  publish:
+    needs: [gate, smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.gate.outputs.tag }}
+    steps:
+      - name: Un-draft (prerelease never becomes latest)
+        run: |
+          set -eu
+          if [ "${{ needs.gate.outputs.prerelease }}" = true ]; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
+          else
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          fi
+
+  # The exact path docs/install.sh resolves, fetched with no credentials the way a
+  # stranger's curl does. It only exists for a public repo and a non-prerelease.
+  public-path:
+    needs: [gate, publish]
+    if: ${{ github.event.repository.private == false && needs.gate.outputs.prerelease == 'false' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ needs.gate.outputs.tag }}
+          persist-credentials: false
+      - run: |
+          set -eux
+          d=$(mktemp -d)
+          SMARTOPEN_REPO="$GITHUB_REPOSITORY" sh docs/install.sh --prefix="$d"
+          "$d/bin/smartopen" --version | grep -F "smartopen ${{ needs.gate.outputs.version }}"
+          "$d/bin/opn" --version
+
+  # crates.io last: the crate is the source, the release is the bytes, and both must
+  # exist for a tag. Needs the CARGO_REGISTRY_TOKEN repository secret.
+  crates-io:
+    needs: [gate, publish]
+    if: ${{ needs.gate.outputs.prerelease == 'false' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ needs.gate.outputs.tag }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
