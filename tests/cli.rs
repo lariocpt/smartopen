@@ -262,12 +262,13 @@ fn wizard_yes_no_install_writes_a_config_doctor_accepts() {
         sandbox.config_dir().join("yazi").join("yazi.toml")
     };
     assert!(yazi_toml.is_file(), "{}", yazi_toml.display());
-    assert!(
-        sandbox
-            .config_dir()
-            .join("broot")
-            .join("smartopen.hjson")
-            .is_file()
+    // broot integration is not offered on Windows (the Enter verb needs `sh`).
+    let broot_verbs = sandbox.config_dir().join("broot").join("smartopen.hjson");
+    assert_eq!(
+        broot_verbs.is_file(),
+        !cfg!(windows),
+        "{}",
+        broot_verbs.display()
     );
 }
 
@@ -340,6 +341,16 @@ fn yazi_print_is_toml_and_broot_print_is_json() {
     let doc: toml::Value = toml::from_str(std::str::from_utf8(&yazi).unwrap()).unwrap();
     assert!(doc.get("opener").is_some() && doc.get("open").is_some());
 
+    if cfg!(windows) {
+        // Refused there, with the reason: broot runs verbs without a shell.
+        sandbox
+            .cmd("opn")
+            .args(["broot", "print"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("Windows"));
+        return;
+    }
     let broot = sandbox
         .cmd("opn")
         .args(["broot", "print"])
@@ -386,6 +397,17 @@ fn yazi_and_broot_check_apply_check_round_trip_in_a_temp_target() {
         .success();
 
     let broot_dir = sandbox.path().join("broot");
+    if cfg!(windows) {
+        sandbox
+            .smartopen()
+            .args(["broot", "apply", "--target"])
+            .arg(&broot_dir)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("Windows"));
+        assert!(!broot_dir.exists(), "nothing may be written when refused");
+        return;
+    }
     sandbox
         .smartopen()
         .args(["broot", "apply", "--target"])

@@ -223,6 +223,17 @@ mod tests {
         }
     }
 
+    /// A command whose program is only known at run time, spelled for the shell this OS
+    /// runs commands through: `${EDITOR:-nano}` is a variable to `sh` and a (missing)
+    /// program name to `cmd`, which reads only `%VAR%`.
+    fn dynamic_command() -> &'static str {
+        if cfg!(windows) {
+            "%EDITOR% --wait"
+        } else {
+            "${EDITOR:-nano}"
+        }
+    }
+
     #[test]
     fn report_classifies_each_command_and_counts_only_real_problems() {
         let other_os = if cfg!(windows) {
@@ -236,7 +247,7 @@ mod tests {
                 "definitely-not-installed-smartopen-doctor-test",
                 None,
             ),
-            ("Dynamic", "${EDITOR:-nano}", None),
+            ("Dynamic", dynamic_command(), None),
             ("Empty", "", None),
             (
                 "Elsewhere",
@@ -267,7 +278,7 @@ mod tests {
 
     #[test]
     fn json_shape_is_flat_and_tagged() {
-        let config = config_with_shortcuts(&[("Dynamic", "${EDITOR:-nano}", None)]);
+        let config = config_with_shortcuts(&[("Dynamic", dynamic_command(), None)]);
         let report = diagnose(&config, Path::new("/tmp/config.toml"));
 
         let json = serde_json::to_value(&report).unwrap();

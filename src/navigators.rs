@@ -289,6 +289,14 @@ mod tests {
             ..Options::default()
         };
 
+        if cfg!(windows) {
+            // Refused there: broot runs verbs without a shell and the Enter verb needs `sh`.
+            let error = run(Navigator::Broot, Action::Check, &options).unwrap_err();
+            assert!(error.to_string().contains("Windows"), "{error}");
+            let _ = fs::remove_dir_all(dir);
+            return;
+        }
+
         assert_eq!(run(Navigator::Broot, Action::Check, &options).unwrap(), 1);
         run(
             Navigator::Broot,
