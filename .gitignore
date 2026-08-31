@@ -1,1 +1,3 @@
 /target
+/dist
+test/containers/last-*.log
