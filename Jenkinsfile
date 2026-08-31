@@ -104,15 +104,21 @@ pipeline {
 
         stage('Preflight') {
             when { environment name: 'NEEDED', value: '1' }
+            environment { PROVENANCE = "${params.PROVENANCE}" }
             steps {
                 sh '''
                     set -eu
                     test -w /srv/apps || { echo "/srv/apps not writable"; exit 1; }
+                    test -r /srv/apps/index.tsv || { echo "/srv/apps/index.tsv is not readable — Resolve cannot tell what is already mirrored"; exit 1; }
                     test -x /opt/publish/bin/apps-publish || { echo "apps-publish not mounted"; exit 1; }
                     command -v curl      >/dev/null || { echo "curl missing — needed to fetch the release"; exit 1; }
                     command -v sha256sum >/dev/null || { echo "sha256sum missing — nothing may publish unverified"; exit 1; }
                     command -v tar       >/dev/null || { echo "tar missing — the release is an archive"; exit 1; }
                     command -v objdump   >/dev/null || { echo "objdump missing — the static-link gate needs binutils"; exit 1; }
+                    if [ "$PROVENANCE" = true ]; then
+                        command -v gh >/dev/null \
+                          || { echo "gh missing — the Provenance stage needs it (add gh to the Jenkins image, or run with PROVENANCE=false)"; exit 1; }
+                    fi
                     curl -fsS -o /dev/null -m 20 https://github.com \
                         || { echo "no egress to github.com — mirror mode needs it"; exit 1; }
                 '''
@@ -178,6 +184,9 @@ pipeline {
                 }
             }
             steps {
+                // The credentials wrapper is not habit: `gh attestation verify` asks the
+                // API for the attestation and exits 4 with "please run: gh auth login"
+                // when no token is set, public repository or not.
                 withCredentials([usernamePassword(credentialsId: 'github-pat',
                         usernameVariable: 'GH_USER', passwordVariable: 'GH_TOKEN')]) {
                     sh '''
@@ -276,10 +285,12 @@ pipeline {
 
                     # And end to end, the way a machine actually gets it — including the
                     # old name, which resolves by file name.
-                    for n in smartopen opn; do
-                        curl -fsSL https://apps.in.drlario.org/install.sh | bash -s -- --list | grep -q "$n" \
-                            || { echo "FAIL: install.sh does not list $n"; exit 1; }
-                    done
+                    # Match the tool AND its version: a bare name match passes on the
+                    # stale `opn` tool, which exposes a file called smartopen, so the
+                    # check could not fail the case it exists to catch.
+                    listing=$(curl -fsSL https://apps.in.drlario.org/install.sh | bash -s -- --list)
+                    printf '%s' "$listing" | grep -F "smartopen" | grep -qF "$VERSION" \
+                        || { echo "FAIL: install.sh does not list smartopen $VERSION"; printf '%s\n' "$listing"; exit 1; }
                     echo "mirrored smartopen $VERSION from $TAG"
                 '''
             }

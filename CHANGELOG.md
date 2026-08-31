@@ -11,6 +11,34 @@ section here. `version` in `Cargo.toml` must match the tag being released.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The installer died on stock Alpine.** busybox wget has no `--https-only` and rejects
+  the whole command line when it sees one, so `wget -qO- … | sh` ended in a usage dump
+  and an error blaming the release — on the one distribution the static musl build exists
+  for, which ships wget and no curl. `docs/install.sh` asks `wget --help` for the flag
+  before using it, and says "no curl or wget on this machine" instead of "is this a
+  published release?" when there was never a fetch tool to begin with. The container
+  suite installs from a `file://` base, which is a `cp`, so no test had ever run either
+  fetch tool; it now points the installer at an unroutable **https** base and fails if
+  the command line it builds is one this wget rejects.
+- **`shortcuts import navi` lost `<arg=default>` defaults.** `git reset --hard <ref=HEAD>`
+  produced `{{ref}}` beside a table named `ref=HEAD`, which matches no placeholder — so
+  the default vanished and `--write` appended a dead table. navi and pet now share one
+  splitter.
+- The mirror job's Preflight checks for `gh` when `PROVENANCE` is on, rather than fetching
+  the release first and failing at the Provenance stage; its Verify matches the tool
+  **and** its version, because a bare name match passed on the stale `opn` tool, which
+  exposes a file called `smartopen`.
+
+### Changed
+
+- The README no longer advertises `yay -S smartopen-bin`: the AUR package is written and
+  its checksums match the release, but it has not been submitted. It says so instead.
+- The README's manual-download paragraph distinguishes the static `-musl` archives from
+  the `-gnu` ones, which are dynamically linked and need glibc 2.34.
+
+
 ## [0.2.0] - 2026-08-31
 
 First public release. Until now this was a LAN-only tool named `opn`, built by Jenkins
@@ -164,7 +192,8 @@ file manager, a shell keybinding, or the command line with one config.
   subcommand needs a `./` prefix.
 - **broot integration is back.** `smartopen broot apply` writes an Enter verb (also
   invocable as `:smartopen`) to `smartopen.hjson` and imports it from `conf.hjson`,
-  replacing a `yazi-opener-config` import if one is there. `--setup-broot` had been
+  replacing an `openers.hjson` import — the file `yazi-opener-config` wrote — if one
+  is there. `--setup-broot` had been
   removed; `niricritty`'s bake called it anyway and failed silently. It works again —
   on Unix and macOS; broot on Windows runs verbs without a shell, so `broot apply`
   refuses there and the wizard does not offer it.
@@ -184,7 +213,8 @@ file manager, a shell keybinding, or the command line with one config.
   resolves the latest release, downloads the archive for this machine, verifies it
   against the release's `SHA256SUMS`, and puts `smartopen` and `opn` in `~/.local/bin`.
   POSIX sh, nothing is executable before it is verified, `--prefix`, `--version`,
-  `--source=apps` for the LAN mirror, `--download-only`. Linux gets the static musl build.
+  `--source=apps` for the LAN mirror, `--download-only=DIR`. Linux gets the static musl
+  build.
 - **A verified tool catalogue.** `smartopen tools list` shows every catalogue tool, whether
   it is installed, and the one command that installs it here — chosen from the package
   managers on `PATH` (`paru`/`yay` before `pacman`, then `cargo`, `brew`, `eget`, `pipx`;

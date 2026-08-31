@@ -102,15 +102,19 @@ reports welcome.
 curl -fsSL https://lariocpt.github.io/smartopen/install.sh | sh   # Linux, macOS: static musl / native
 cargo install smartopen                                           # crates.io
 brew install lariocpt/smartopen/smartopen                         # macOS / Linuxbrew
-yay -S smartopen-bin                                              # Arch (AUR)
 cargo install --path .                                            # from a clone
 ```
+
+An AUR package (`smartopen-bin`) is written and its checksums match the release, but it
+has not been submitted yet — `yay -S smartopen-bin` will not resolve until it is.
 
 Or take an archive from [Releases](https://github.com/lariocpt/smartopen/releases): every
 archive holds `smartopen`, `opn`, `README.md` and `LICENSE`; the release's `SHA256SUMS`
 covers all of them, and the installer verifies it before anything becomes executable.
-Linux archives are static musl builds — no glibc floor, they run on Alpine and on old
-enterprise distros alike.
+Take a **`-musl`** archive if you are choosing by hand: those are statically linked, with
+no glibc floor at all, so they run on Alpine and on old enterprise distros alike. The
+`-gnu` archives are dynamically linked and need glibc 2.34 or newer; the installer above
+always picks musl on Linux.
 
 Building from source needs Rust 1.88 or newer. The dependency tree is pure Rust: no C
 toolchain, no `pkg-config`, no system libraries.
@@ -243,7 +247,7 @@ Every command — in an association or a shortcut — takes:
 | `priority = 10` | sorts up the menu; equal priorities keep config order |
 | `default = true` | runs without a menu when it is the only default among the matches |
 | `confirm = true` | shows the rendered line and asks first (`--yes` skips) |
-| `group = "git"` | a heading in the picker and a `git:` filter prefix |
+| `group = "git"` | shown as a `git ›` prefix on the row, and a `git:` filter prefix |
 | `when` | conditions — see the launcher below |
 | `param` | `{{parameters}}` — see the launcher below |
 
