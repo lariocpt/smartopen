@@ -28,6 +28,18 @@ file manager, a shell keybinding, or the command line with one config.
 ### Added
 
 - `LICENSE` (MIT) and this changelog.
+
+### Fixed
+
+- **yazi never received the file.** yazi 26 hands an opener its files through `%s`
+  (every selected file, shell-escaped); the `"$@"` the inherited spec used arrives empty,
+  because yazi no longer passes files as positional arguments. Every opener the yazi
+  renderer writes — the `smartopen` delegate and the per-type viewers alike — now uses
+  `%s`. Found by the navigator test that presses Enter in a real yazi.
+- **broot ate the verb's braces.** broot substitutes every `{name}` in a verb, so
+  `${TERMINAL:-ghostty}` reached the shell as `$` and the dispatcher's `${1##*/}` as
+  nothing. The verb no longer contains a brace other than `{file}`; `${VAR:-default}`
+  forms are hoisted into a prelude. Found by the same test, in a real broot.
 - **Runs on macOS and Windows as well as Linux.** Command lines are quoted for the shell
   that will run them: `sh` gets `'…'`, `cmd.exe` gets `"…"` with embedded quotes doubled,
   and a value cmd cannot carry (a `%`, a newline) is refused rather than mangled. Target

@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, Write};
 
 use anyhow::Result;
 use crossterm::{
@@ -40,17 +40,34 @@ pub fn select_command(
     picker.run(&mut terminal.terminal)
 }
 
+/// The picker draws on the terminal itself, never on stdout: `--print` hands stdout to a
+/// shell widget's `$(…)`, and the frames must not end up in that variable. `/dev/tty`
+/// (`CONOUT$` on Windows) when it can be opened, stderr otherwise — fzf's arrangement.
+type Backend = CrosstermBackend<Box<dyn Write>>;
+
+fn terminal_writer() -> Box<dyn Write> {
+    #[cfg(unix)]
+    if let Ok(tty) = std::fs::OpenOptions::new().write(true).open("/dev/tty") {
+        return Box::new(io::BufWriter::new(tty));
+    }
+    #[cfg(windows)]
+    if let Ok(con) = std::fs::OpenOptions::new().write(true).open("CONOUT$") {
+        return Box::new(io::BufWriter::new(con));
+    }
+    Box::new(io::stderr())
+}
+
 struct TerminalSession {
-    terminal: Terminal<CrosstermBackend<io::Stdout>>,
+    terminal: Terminal<Backend>,
 }
 
 impl TerminalSession {
     fn new() -> Result<Self> {
         enable_raw_mode()?;
-        let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen)?;
+        let mut writer = terminal_writer();
+        execute!(writer, EnterAlternateScreen)?;
 
-        let backend = CrosstermBackend::new(stdout);
+        let backend = CrosstermBackend::new(writer);
         let terminal = Terminal::new(backend)?;
 
         Ok(Self { terminal })
@@ -110,10 +127,7 @@ impl<'a> Picker<'a> {
         picker
     }
 
-    fn run(
-        &mut self,
-        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    ) -> Result<Option<CommandEntry>> {
+    fn run(&mut self, terminal: &mut Terminal<Backend>) -> Result<Option<CommandEntry>> {
         loop {
             terminal.draw(|frame| self.draw(frame))?;
 
@@ -827,10 +841,7 @@ struct MultiPicker<'a> {
 }
 
 impl MultiPicker<'_> {
-    fn run(
-        &mut self,
-        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    ) -> Result<Option<Vec<bool>>> {
+    fn run(&mut self, terminal: &mut Terminal<Backend>) -> Result<Option<Vec<bool>>> {
         loop {
             terminal.draw(|frame| self.draw(frame))?;
             if let Event::Key(key) = event::read()?

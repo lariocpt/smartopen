@@ -28,12 +28,17 @@ const LEGACY_OPENERS_FILE: &str = "openers.hjson";
 ///
 /// The verb runs in a NEW terminal window (`terminal`) so a blocking viewer never fights
 /// broot for the screen; `$TERMINAL` is honoured with ghostty as the fallback.
+///
+/// NO BRACES ANYWHERE IN THE VERB EXCEPT `{file}`. broot substitutes every `{name}` in a
+/// verb's text with its own placeholders, and an unknown one becomes nothing: the
+/// original `exec "${TERMINAL:-ghostty}"` reached the shell as `exec "$"`, and the
+/// dispatcher's `${1##*/}` as `$`. The navigator test found both.
 pub fn openers_hjson(spec: &Spec) -> String {
     let script = dispatch_script(spec);
     let external = json_array(&[
         "sh",
         "-c",
-        "exec \"${TERMINAL:-ghostty}\" -e sh -c \"$0\" broot-open \"$1\"",
+        "t=$TERMINAL; [ -n \"$t\" ] || t=ghostty; exec \"$t\" -e sh -c \"$0\" broot-open \"$1\"",
         &script,
         "{file}",
     ]);
@@ -44,8 +49,9 @@ pub fn openers_hjson(spec: &Spec) -> String {
     )
 }
 
-/// Build `b="${1##*/}"; case "$b" in (glob|glob) <run> ;; … (*) <default run> ;; esac`.
+/// Build `b=$(basename "$1"); case "$b" in (glob|glob) <run> ;; … (*) <default run> ;; esac`.
 fn dispatch_script(spec: &Spec) -> String {
+    let mut prelude = String::new();
     // Specific branches from URL rules, grouping consecutive rules with the same command.
     let mut branches: Vec<(Vec<String>, String)> = Vec::new();
     for rule in &spec.prepend_rules {
@@ -56,6 +62,7 @@ fn dispatch_script(spec: &Spec) -> String {
         let Some(run) = rule.use_openers.first().and_then(|n| run_for(spec, n)) else {
             continue;
         };
+        let run = debrace(&run, &mut prelude);
         if let Some(last) = branches.last_mut()
             && last.1 == run
         {
@@ -75,15 +82,46 @@ fn dispatch_script(spec: &Spec) -> String {
         .and_then(|n| run_for(spec, n))
         .or_else(|| run_for(spec, "edit"))
         .unwrap_or_else(|| "${EDITOR:-micro} \"$@\"".to_string());
+    let default_run = debrace(&default_run, &mut prelude);
 
     // broot passes the full path; match the basename (like yazi's url globs) but run the
     // viewer on the full path ("$@"/"$1").
-    let mut s = String::from("b=\"${1##*/}\"; case \"$b\" in ");
+    let mut s = prelude;
+    s.push_str("b=$(basename \"$1\"); case \"$b\" in ");
     for (globs, run) in &branches {
         s.push_str(&format!("({}) {} ;; ", globs.join("|"), run));
     }
     s.push_str(&format!("(*) {default_run} ;; esac"));
     s
+}
+
+/// Rewrite `${VAR:-default}` as `$VAR`, hoisting the default into `prelude` as
+/// `[ -n "$VAR" ] || VAR=default; ` — broot would otherwise eat the braces.
+fn debrace(run: &str, prelude: &mut String) -> String {
+    let mut out = String::with_capacity(run.len());
+    let mut rest = run;
+    while let Some(start) = rest.find("${") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        let Some(end) = after.find('}') else {
+            out.push_str(&rest[start..]);
+            return out;
+        };
+        let inner = &after[..end];
+        match inner.split_once(":-") {
+            Some((var, default)) if !var.is_empty() => {
+                let guard = format!("[ -n \"${var}\" ] || {var}={default}; ");
+                if !prelude.contains(&guard) {
+                    prelude.push_str(&guard);
+                }
+                out.push_str(&format!("${var}"));
+            }
+            _ => out.push_str(&format!("${inner}")),
+        }
+        rest = &after[end + 1..];
+    }
+    out.push_str(rest);
+    out
 }
 
 fn run_for(spec: &Spec, opener: &str) -> Option<String> {
@@ -276,7 +314,9 @@ mod tests {
     fn dispatcher_groups_globs_and_falls_back_to_edit() {
         let script = dispatch_script(&Spec::builtin());
         assert!(
-            script.starts_with("b=\"${1##*/}\"; case \"$b\" in "),
+            script.starts_with(
+                "[ -n \"$EDITOR\" ] || EDITOR=micro; b=$(basename \"$1\"); case \"$b\" in "
+            ),
             "{script}"
         );
         assert!(
@@ -287,10 +327,32 @@ mod tests {
             script.contains("(*.xlsx|*.xls) xleak -i \"$@\" ;;"),
             "{script}"
         );
-        assert!(
-            script.ends_with("(*) ${EDITOR:-micro} \"$@\" ;; esac"),
-            "{script}"
+        assert!(script.ends_with("(*) $EDITOR \"$@\" ;; esac"), "{script}");
+    }
+
+    #[test]
+    fn nothing_in_the_verb_has_braces_except_the_file_placeholder() {
+        for spec in [
+            Spec::builtin(),
+            effective(&Spec::builtin(), Engine::Smartopen, "smartopen"),
+        ] {
+            let text = openers_hjson(&spec);
+            let braces = text.matches('{').count();
+            // The JSON object, the verb object, and `{file}`: three opening braces.
+            assert_eq!(braces, 3, "broot would eat these:\n{text}");
+        }
+    }
+
+    #[test]
+    fn debrace_hoists_defaults_into_a_prelude() {
+        let mut prelude = String::new();
+        let run = debrace("${EDITOR:-micro} \"$@\" ${PAGER:-less}", &mut prelude);
+        assert_eq!(run, "$EDITOR \"$@\" $PAGER");
+        assert_eq!(
+            prelude,
+            "[ -n \"$EDITOR\" ] || EDITOR=micro; [ -n \"$PAGER\" ] || PAGER=less; "
         );
+        assert_eq!(debrace("plain \"$1\"", &mut String::new()), "plain \"$1\"");
     }
 
     #[test]

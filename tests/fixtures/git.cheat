@@ -1,0 +1,9 @@
+% git, vcs
+
+# Switch to a branch
+git checkout <branch>
+
+$ branch: git branch --format='%(refname:short)' --- --column 1
+
+# Show the log
+git log --oneline
