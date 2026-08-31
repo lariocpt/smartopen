@@ -52,6 +52,17 @@ pub fn yazi_config_path() -> Option<PathBuf> {
     Some(base.join("yazi.toml"))
 }
 
+/// broot's config directory: `~/.config/broot` on Unix and macOS,
+/// `%APPDATA%\dystroy\broot\config` on Windows.
+pub fn broot_config_dir() -> Option<PathBuf> {
+    let base = config_base()?;
+    #[cfg(windows)]
+    let dir = base.join("dystroy").join("broot").join("config");
+    #[cfg(not(windows))]
+    let dir = base.join("broot");
+    Some(dir)
+}
+
 fn config_base() -> Option<PathBuf> {
     #[cfg(windows)]
     {
