@@ -76,10 +76,35 @@ so_fetch() {                                  # <url> <dest>
     if so_have curl; then
         curl -fsSL --proto "$proto" --retry 3 --retry-delay 1 -o "$2" "$1"
     elif so_have wget; then
-        case "$1" in https://*) wget -q --https-only -O "$2" "$1" ;; *) wget -q -O "$2" "$1" ;; esac
+        # busybox wget has no --https-only and rejects the whole command line when it
+        # sees one, so ask before using it. Alpine ships busybox wget and no curl, which
+        # makes this the only route in on the very platform the musl build is for: the
+        # flag went out unguarded and every stock-Alpine install died on it.
+        if [ "$(so_wget_https_only)" = yes ]; then
+            case "$1" in
+                https://*) wget -q --https-only -O "$2" "$1" ;;
+                *)         wget -q -O "$2" "$1" ;;
+            esac
+        else
+            wget -q -O "$2" "$1"
+        fi
     else
         so_die 'need curl or wget'
     fi
+}
+
+# Does this wget understand --https-only? Asked once, then remembered. Without it a
+# redirect to http would be followed; the sha256 check below is what makes that safe,
+# and it is never skipped.
+so_wget_https_only() {
+    if [ -z "${SO_WGET_HTTPS_ONLY:-}" ]; then
+        if wget --help 2>&1 | grep -q -- '--https-only'; then
+            SO_WGET_HTTPS_ONLY=yes
+        else
+            SO_WGET_HTTPS_ONLY=no
+        fi
+    fi
+    printf '%s' "$SO_WGET_HTTPS_ONLY"
 }
 
 # Fail closed. A checksum you cannot compute is not a checksum, and the job of this
@@ -138,8 +163,14 @@ so_resolve_github() {                         # -> SO_URL, SO_WANT, SO_ASSET
     else
         base="https://github.com/$repo/releases/download/$SO_VERSION"
     fi
-    so_fetch "$base/$SO_SUMS" "$SO_TMP/$SO_SUMS" \
-        || so_die "cannot fetch $base/$SO_SUMS — is '$SO_VERSION' a published release of $repo?"
+    so_fetch "$base/$SO_SUMS" "$SO_TMP/$SO_SUMS" || {
+        # Two very different failures share this exit: no such release, or the fetch
+        # tool itself refused. Say which, or a working release looks unpublished.
+        if so_have curl || so_have wget; then
+            so_die "cannot fetch $base/$SO_SUMS — is '$SO_VERSION' a published release of $repo, and is this machine online?"
+        fi
+        so_die "cannot fetch $base/$SO_SUMS — no curl or wget on this machine"
+    }
     # Pick the archive for this target by name out of SHA256SUMS: the file names the
     # asset with no directory component. The leading '*' is sha256sum's binary-mode mark.
     SO_ASSET=$(awk -v t="smartopen-$SO_TARGET-" '

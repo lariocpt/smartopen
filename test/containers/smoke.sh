@@ -16,6 +16,26 @@ SMARTOPEN_DOWNLOAD_BASE=file:///dist sh /install.sh --prefix=/usr/local \
 command -v smartopen >/dev/null || fail "smartopen not on PATH after install"
 command -v opn >/dev/null || fail "opn not on PATH after install"
 
+# 1b. The fetch branch of so_fetch, which step 1 never reaches: a file:// base is a plain
+#     `cp`, so neither curl nor wget ever runs. That is how an installer feeding busybox
+#     wget a GNU-only flag (`--https-only`) shipped and broke every stock-Alpine install
+#     — the one image the musl build exists for, which has wget and no curl.
+#
+#     Point the installer at an unroutable base and let it fail: what is under test is
+#     the command line it builds, and the fetch tool parses that before it connects. A
+#     refused connection is the expected outcome; a complaint about the OPTIONS is the
+#     bug. No server and no network needed.
+# https, not http: the flag that broke Alpine is only added for an https URL, so an
+#     http base would take the branch that never carries it and prove nothing.
+probe=$(SMARTOPEN_DOWNLOAD_BASE=https://127.0.0.1:1 sh /install.sh --prefix=/tmp/probe 2>&1 || true)
+case "$probe" in
+    *"nrecognized option"*|*"nknown option"*|*"nvalid option"*|*"is unknown"*)
+        fail "install.sh builds a command line this fetch tool rejects: $probe" ;;
+esac
+[ ! -x /tmp/probe/bin/smartopen ] || fail "an unreachable base must install nothing"
+printf 'fetch branch builds a command line %s accepts\n' \
+    "$(command -v curl >/dev/null 2>&1 && echo curl || echo wget)"
+
 # 2. Static: the musl archive must need no shared libraries at all. Rust's musl target is
 #    static-PIE, and musl's own ldd prints the loader line for any PIE executable, so the
 #    test is "no `=>` line" — a resolved shared library — not "ldd says nothing".

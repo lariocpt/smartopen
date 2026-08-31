@@ -100,7 +100,8 @@ fn navi(text: &str) -> Vec<CommandEntry> {
             ..CommandEntry::default()
         };
         for name in names {
-            entry.param.insert(name, Param::default());
+            let (name, param) = split_default(name);
+            entry.param.insert(name, param);
         }
         pending.push(entry);
     }
@@ -141,18 +142,8 @@ fn pet(text: &str) -> Result<Vec<CommandEntry>> {
                 ..CommandEntry::default()
             };
             for name in names {
-                // `<param=default>` carried its default through angle_to_braces.
-                let (name, default) = match name.split_once('=') {
-                    Some((n, d)) => (n.to_string(), Some(d.to_string())),
-                    None => (name, None),
-                };
-                entry.param.insert(
-                    name,
-                    Param {
-                        default,
-                        ..Param::default()
-                    },
-                );
+                let (name, param) = split_default(name);
+                entry.param.insert(name, param);
             }
             entry
         })
@@ -198,6 +189,23 @@ fn tldr(text: &str) -> Vec<CommandEntry> {
         }
     }
     out
+}
+
+/// `<param=default>` carries its default through [`angle_to_braces`] as `name=default`;
+/// split it back into the name and the `Param`. navi and pet both write that syntax —
+/// navi's importer used to insert the whole `ref=HEAD` string as the parameter's NAME,
+/// so `{{ref}}` had no table, the default was lost, and `--write` appended a dead one.
+fn split_default(raw: String) -> (String, Param) {
+    match raw.split_once('=') {
+        Some((name, default)) => (
+            name.to_string(),
+            Param {
+                default: Some(default.to_string()),
+                ..Param::default()
+            },
+        ),
+        None => (raw, Param::default()),
+    }
 }
 
 /// A name the parameter parser will read back. tldr writes `{{path/to/file}}`,
@@ -305,6 +313,27 @@ mod tests {
         assert_eq!(shortcuts[0].param["count"].default.as_deref(), Some("4"));
         assert_eq!(shortcuts[0].param["host"].default, None);
         assert_eq!(shortcuts[0].group.as_deref(), Some("net"));
+    }
+
+    #[test]
+    fn navi_keeps_a_defaulted_arg_as_a_default_not_as_the_name() {
+        // `<ref=HEAD>` used to become `[shortcut.param."ref=HEAD"]` — a table matching no
+        // placeholder, with the default lost, which `--write` then appended to the config.
+        let cheat = "% git\n# Reset hard to a ref\ngit reset --hard <ref=HEAD>\n";
+        let shortcuts = navi(cheat);
+        assert_eq!(shortcuts.len(), 1);
+        assert_eq!(shortcuts[0].run, "git reset --hard {{ref}}");
+        let param = shortcuts[0]
+            .param
+            .get("ref")
+            .expect("the parameter is named for the placeholder");
+        assert_eq!(param.default.as_deref(), Some("HEAD"));
+        for name in crate::params::names(&shortcuts[0].run) {
+            assert!(
+                shortcuts[0].param.contains_key(&name),
+                "{name} has no table"
+            );
+        }
     }
 
     #[test]
