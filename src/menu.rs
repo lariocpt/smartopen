@@ -85,7 +85,7 @@ struct Picker<'a> {
 enum PickerAction {
     Continue,
     Cancel,
-    Select(CommandEntry),
+    Select(Box<CommandEntry>),
 }
 
 impl<'a> Picker<'a> {
@@ -123,7 +123,7 @@ impl<'a> Picker<'a> {
                 match self.handle_key(key) {
                     PickerAction::Continue => {}
                     PickerAction::Cancel => return Ok(None),
-                    PickerAction::Select(command) => return Ok(Some(command)),
+                    PickerAction::Select(command) => return Ok(Some(*command)),
                 }
             }
         }
@@ -265,14 +265,14 @@ impl<'a> Picker<'a> {
             KeyCode::Char(digit @ '1'..='9') if query_empty && !ctrl && !alt => {
                 let position = digit.to_digit(10).unwrap() as usize - 1;
                 match self.rows.get(position) {
-                    Some(row) => PickerAction::Select(self.commands[row.index].clone()),
+                    Some(row) => PickerAction::Select(Box::new(self.commands[row.index].clone())),
                     None => PickerAction::Continue,
                 }
             }
 
             // Alt+<key> picks the command carrying that `key`, filter or no filter.
             KeyCode::Char(value) if alt && !ctrl => match self.command_with_key(value) {
-                Some(command) => PickerAction::Select(command.clone()),
+                Some(command) => PickerAction::Select(Box::new(command.clone())),
                 None => PickerAction::Continue,
             },
 
@@ -287,7 +287,7 @@ impl<'a> Picker<'a> {
 
     fn select_current(&self) -> PickerAction {
         match self.selected_command() {
-            Some(command) => PickerAction::Select(command.clone()),
+            Some(command) => PickerAction::Select(Box::new(command.clone())),
             None => PickerAction::Continue,
         }
     }
@@ -331,11 +331,26 @@ impl<'a> Picker<'a> {
     /// Otherwise: fuzzy matches only, best first — label matches outrank description
     /// matches, which outrank matches on the command text.
     fn refresh_rows(&mut self) {
-        self.rows = if self.query.is_empty() {
+        // `git:` at the start of the query narrows to that group; the rest is the
+        // fuzzy query. Only when some command actually has such a group, so a plain
+        // `a:b` typed into the filter still filters.
+        let (group, query) = split_group_filter(&self.query, self.commands);
+        let group = group.as_deref();
+        let in_group = |command: &CommandEntry| {
+            group.is_none_or(|wanted| {
+                command
+                    .group
+                    .as_deref()
+                    .is_some_and(|g| g.to_lowercase().starts_with(wanted))
+            })
+        };
+
+        let mut rows: Vec<Row> = if query.is_empty() {
             let mut rows: Vec<(f64, Row)> = self
                 .commands
                 .iter()
                 .enumerate()
+                .filter(|(_, command)| in_group(command))
                 .map(|(index, command)| {
                     (
                         self.history.frecency(&command.label),
@@ -353,14 +368,19 @@ impl<'a> Picker<'a> {
                 .commands
                 .iter()
                 .enumerate()
+                .filter(|(_, command)| in_group(command))
                 .filter_map(|(index, command)| {
-                    let (tier, score, highlight) = score_command(&self.query, command)?;
+                    let (tier, score, highlight) = score_command(query, command)?;
                     Some((tier, score, Row { index, highlight }))
                 })
                 .collect();
             scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.total_cmp(&a.1)));
             scored.into_iter().map(|(_, _, row)| row).collect()
         };
+
+        // Commands `--all` revealed sit below the ones that apply, in their own order.
+        rows.sort_by_key(|row| self.commands[row.index].hidden_reason.is_some());
+        self.rows = rows;
         self.selected = 0;
     }
 
@@ -438,7 +458,51 @@ impl<'a> Picker<'a> {
             lines.push(format!("Hotkey: Alt+{key}"));
         }
 
+        if let Some(group) = &command.group {
+            lines.push(String::new());
+            lines.push(format!("Group: {group}"));
+        }
+
+        if !command.param.is_empty() {
+            lines.push(String::new());
+            lines.push("Asks for".to_string());
+            for (name, param) in &command.param {
+                let how = match (&param.choices, &param.default) {
+                    (Some(_), _) => "pick from a list",
+                    (None, Some(default)) => &format!("default {default}"),
+                    (None, None) => "typed",
+                };
+                lines.push(format!("{name}: {how}"));
+            }
+        }
+
+        if let Some(reason) = &command.hidden_reason {
+            lines.push(String::new());
+            lines.push("Hidden here".to_string());
+            lines.push(format!("failed: {reason}"));
+        }
+
         lines.join("\n")
+    }
+}
+
+/// `git:log` → (`git`, `log`) when a command has a group starting with `git`.
+fn split_group_filter<'q>(query: &'q str, commands: &[CommandEntry]) -> (Option<String>, &'q str) {
+    let Some((prefix, rest)) = query.split_once(':') else {
+        return (None, query);
+    };
+    let wanted = prefix.trim().to_lowercase();
+    let known = !wanted.is_empty()
+        && commands.iter().any(|command| {
+            command
+                .group
+                .as_deref()
+                .is_some_and(|g| g.to_lowercase().starts_with(&wanted))
+        });
+    if known {
+        (Some(wanted), rest.trim_start())
+    } else {
+        (None, query)
     }
 }
 
@@ -472,19 +536,38 @@ fn command_list_item(
     spans.push(Span::styled(gutter, Style::default().fg(Color::DarkGray)));
     spans.push(Span::raw(" "));
 
-    let icon = command.icon.trim();
-    if !icon.is_empty() {
-        spans.push(Span::raw(format!("{icon}  ")));
+    // Hidden (shown by --all) rows are greyed throughout; nothing on them is bright.
+    let hidden = command.hidden_reason.is_some();
+    let base = if hidden {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default()
+    };
+
+    if let Some(group) = &command.group {
+        spans.push(Span::styled(
+            format!("{group} › "),
+            Style::default().fg(Color::DarkGray),
+        ));
     }
 
-    let matched = Style::default()
-        .fg(Color::Cyan)
-        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+    let icon = command.icon.trim();
+    if !icon.is_empty() {
+        spans.push(Span::styled(format!("{icon}  "), base));
+    }
+
+    let matched = if hidden {
+        base.add_modifier(Modifier::UNDERLINED)
+    } else {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+    };
     let mut plain = String::new();
     for (index, ch) in command.label.trim().chars().enumerate() {
         if highlight.contains(&index) {
             if !plain.is_empty() {
-                spans.push(Span::raw(std::mem::take(&mut plain)));
+                spans.push(Span::styled(std::mem::take(&mut plain), base));
             }
             spans.push(Span::styled(ch.to_string(), matched));
         } else {
@@ -492,7 +575,14 @@ fn command_list_item(
         }
     }
     if !plain.is_empty() {
-        spans.push(Span::raw(plain));
+        spans.push(Span::styled(plain, base));
+    }
+
+    if let Some(reason) = &command.hidden_reason {
+        spans.push(Span::styled(
+            format!("  ({reason})"),
+            Style::default().fg(Color::DarkGray),
+        ));
     }
 
     ListItem::new(Line::from(spans))
@@ -632,6 +722,53 @@ mod tests {
 
         assert_eq!(labels(&picker)[0], "Kill server");
         assert_eq!(labels(&picker)[1], "Edit", "config order is the tiebreak");
+    }
+
+    #[test]
+    fn a_group_prefix_narrows_the_list_then_fuzzy_filters_the_rest() {
+        let mut commands = commands();
+        commands[0].group = Some("git".to_string()); // Edit
+        commands[2].group = Some("git".to_string()); // Reveal
+        commands[3].group = Some("ops".to_string()); // Kill server
+        let history = History::disabled();
+        let mut picker = picker(&commands, &history);
+
+        for ch in "git:".chars() {
+            press(&mut picker, KeyCode::Char(ch), KeyModifiers::NONE);
+        }
+        assert_eq!(labels(&picker), ["Edit", "Reveal"]);
+
+        press(&mut picker, KeyCode::Char('r'), KeyModifiers::NONE);
+        assert_eq!(labels(&picker), ["Reveal"]);
+
+        // A prefix that is no group at all is just text.
+        press(&mut picker, KeyCode::Char('u'), KeyModifiers::CONTROL);
+        for ch in "zz:e".chars() {
+            press(&mut picker, KeyCode::Char(ch), KeyModifiers::NONE);
+        }
+        assert!(
+            labels(&picker).is_empty(),
+            "'zz:e' matches no label as text"
+        );
+    }
+
+    #[test]
+    fn hidden_commands_sink_to_the_bottom_but_stay_pickable() {
+        let mut commands = commands();
+        commands[0].hidden_reason = Some("cwd_has [\"Cargo.toml\"]".to_string()); // Edit
+        let history = History::disabled();
+        let mut picker = picker(&commands, &history);
+
+        let shown = labels(&picker);
+        assert_eq!(shown.last().unwrap(), "Edit");
+        assert_eq!(shown[0], "Render Markdown");
+
+        press(&mut picker, KeyCode::End, KeyModifiers::NONE);
+        assert!(picker.detail_text().contains("failed: cwd_has"));
+        match press(&mut picker, KeyCode::Enter, KeyModifiers::NONE) {
+            PickerAction::Select(command) => assert_eq!(command.label, "Edit"),
+            _ => panic!("a hidden command is still pickable once shown"),
+        }
     }
 
     #[test]

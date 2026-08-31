@@ -87,3 +87,24 @@ file manager, a shell keybinding, or the command line with one config.
   user config, its associations and shortcuts first. A repo can ship its own shortcuts,
   and they appear only inside it. `--no-project` ignores them; `--config` names the one in
   effect.
+- **The launcher knows where you are.** `[shortcut.when]` offers a shortcut only while
+  its conditions hold: `cwd_has = ["Cargo.toml"]` (searched upward to the `.git`
+  boundary), `cwd_matches`, `env = ["TMUX", "SSH_CONNECTION=*"]`, and `has = ["gitui"]`
+  so a command vanishes on a machine without the tool instead of failing. `--all` shows
+  the hidden ones greyed with the condition that hid them.
+- **Parameters.** `{{branch}}` in a command is asked for before it runs; `[shortcut.param.branch]`
+  can set a `prompt`, a `default` (or `"last"` — what you answered last time), and a
+  `choices` command whose output lines are offered in the picker, last answer first.
+  Values are shell-quoted like target placeholders. `--param branch=main` presets one.
+- **`terminal = true`** runs a command in a new terminal window, spelled correctly for
+  `$TERMINAL` or whichever of ghostty/foot/kitty/alacritty/wezterm/xterm is installed,
+  Terminal.app on macOS, Windows Terminal (or `start cmd`) on Windows.
+- **A shell widget.** `smartopen shell zsh|bash|fish` prints a snippet that binds `Ctrl-G`
+  to open the picker and put the chosen command on the prompt line, unexecuted, so it can
+  be edited and lands in history. `--print` is the mode it uses.
+- **`confirm = true`** shows the rendered command and asks before running (`--yes` skips).
+- **`group = "git"`** shows in the picker and filters with a `git:` prefix.
+- **Import from navi, pet and tldr.** `smartopen shortcuts import navi|pet|tldr <file>`
+  prints `[[shortcut]]` TOML — tags become groups, `<arg>` and `<arg=default>` become
+  parameters, navi's `$ arg:` lines become `choices`, and a tldr page becomes a group
+  gated on the program being installed. `--write` appends it to the config.

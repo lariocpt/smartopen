@@ -2,15 +2,20 @@ mod config;
 mod doctor;
 mod fuzzy;
 mod history;
+mod import;
+mod launcher;
 mod matcher;
 mod menu;
 mod mime;
+mod params;
 mod paths;
 mod platform;
 mod render;
 mod runner;
 mod shell;
+mod shell_widget;
 mod target;
+mod terminal;
 mod tomlio;
 
 // The yazi/broot surface. Today only `--setup-yazi` reaches it, so the diff/check/print
@@ -23,6 +28,8 @@ mod engine;
 #[allow(dead_code)]
 mod spec;
 
+use std::collections::BTreeMap;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -34,10 +41,14 @@ use crate::config::{
 };
 use crate::doctor::{diagnose, render_text};
 use crate::history::History;
+use crate::import::Source;
+use crate::launcher::Context as WhenContext;
 use crate::matcher::{default_command, matching_commands, shortcuts_here};
 use crate::menu::select_command;
+use crate::params::TerminalPrompter;
 use crate::runner::{plan_command, run_command};
 use crate::shell::Shell;
+use crate::shell_widget::ShellKind;
 use crate::target::{Target, targets_from_args};
 
 #[derive(Debug, Parser)]
@@ -76,6 +87,28 @@ struct Cli {
         help = "Always show the menu, even for a single match or a `default` command"
     )]
     menu: bool,
+
+    #[arg(
+        long,
+        help = "Print the chosen command to stdout instead of running it (the shell widget's mode)"
+    )]
+    print: bool,
+
+    #[arg(
+        long,
+        help = "Also list commands hidden by their `when` conditions, greyed, with the reason"
+    )]
+    all: bool,
+
+    #[arg(
+        long,
+        value_name = "NAME=VALUE",
+        help = "Preset a {{parameter}} instead of being asked (repeatable)"
+    )]
+    param: Vec<String>,
+
+    #[arg(long, help = "Skip `confirm = true` prompts")]
+    yes: bool,
 
     #[arg(long, help = "Open the config in $EDITOR, creating it first if needed")]
     edit_config: bool,
@@ -134,6 +167,30 @@ enum Subcommands {
     },
     /// Print the manual page in roff (`smartopen man > smartopen.1`)
     Man,
+    /// Print a shell snippet binding Ctrl-G to the launcher (source it from your rc file)
+    Shell {
+        #[arg(value_enum)]
+        shell: ShellKind,
+    },
+    /// Work with shortcuts
+    Shortcuts {
+        #[command(subcommand)]
+        action: ShortcutsAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ShortcutsAction {
+    /// Convert navi cheats, a pet snippet file or a tldr page into [[shortcut]] TOML
+    Import {
+        #[arg(value_enum)]
+        source: Source,
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+        /// Append to the config file instead of printing (a backup is written first)
+        #[arg(long)]
+        write: bool,
+    },
 }
 
 /// The process exit code for `main`: the launched command's own code on success, 1 after
@@ -249,8 +306,27 @@ pub fn run() -> Result<i32> {
             .unwrap_or_else(History::disabled)
     };
 
+    let mode = if cli.print {
+        Mode::Print
+    } else if cli.dry_run {
+        Mode::DryRun
+    } else {
+        Mode::Run
+    };
+    let presets = parse_presets(&cli.param)?;
+    let run_opts = RunOptions {
+        mode,
+        presets,
+        yes: cli.yes,
+    };
+    // A cancelled pick prints nothing and exits 130 in --print mode, so the shell widget
+    // can tell "chose nothing" from "chose an empty command"; otherwise it is just 0.
+    let cancelled = if cli.print { 130 } else { 0 };
+    let when_context = WhenContext::from_process();
+
     if !targets.is_empty() {
         let commands = matching_commands(&config, &config_path, &targets)?;
+        let commands = apply_when(commands, &when_context, cli.all);
 
         if commands.is_empty() {
             let named: Vec<String> = targets
@@ -267,7 +343,7 @@ pub fn run() -> Result<i32> {
                 .then(|| &commands[0])
                 .or_else(|| default_command(&commands));
             if let Some(command) = sole {
-                return execute_or_print(command, &targets, cli.dry_run, &mut history);
+                return execute(command, &targets, &run_opts, &mut history, cancelled);
             }
         }
 
@@ -280,15 +356,15 @@ pub fn run() -> Result<i32> {
             &targets,
             &history,
         )? {
-            Some(command) => execute_or_print(&command, &targets, cli.dry_run, &mut history),
-            None => Ok(0),
+            Some(command) => execute(&command, &targets, &run_opts, &mut history, cancelled),
+            None => Ok(cancelled),
         };
     }
 
-    let shortcuts = shortcuts_here(&config);
+    let shortcuts = apply_when(shortcuts_here(&config), &when_context, cli.all);
     if shortcuts.is_empty() {
         bail!(
-            "no shortcuts configured for this platform in {}",
+            "no shortcuts apply here (see --all) in {}",
             config_path.display()
         );
     }
@@ -302,9 +378,60 @@ pub fn run() -> Result<i32> {
         &[],
         &history,
     )? {
-        Some(command) => execute_or_print(&command, &[], cli.dry_run, &mut history),
-        None => Ok(0),
+        Some(command) => execute(&command, &[], &run_opts, &mut history, cancelled),
+        None => Ok(cancelled),
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Run,
+    DryRun,
+    Print,
+}
+
+struct RunOptions {
+    mode: Mode,
+    presets: BTreeMap<String, String>,
+    yes: bool,
+}
+
+/// `--param name=value` into a map; a bare name or an empty name is an error.
+fn parse_presets(args: &[String]) -> Result<BTreeMap<String, String>> {
+    args.iter()
+        .map(|arg| match arg.split_once('=') {
+            Some((name, value)) if !name.trim().is_empty() => {
+                Ok((name.trim().to_string(), value.to_string()))
+            }
+            _ => bail!("--param wants NAME=VALUE, got '{arg}'"),
+        })
+        .collect()
+}
+
+/// Drop the commands whose `when` conditions fail — or, with `--all`, keep them marked
+/// with the reason so the picker can show them greyed.
+fn apply_when(
+    commands: Vec<CommandEntry>,
+    context: &WhenContext<'_>,
+    keep_hidden: bool,
+) -> Vec<CommandEntry> {
+    commands
+        .into_iter()
+        .filter_map(|mut command| {
+            let verdict = command
+                .when
+                .as_ref()
+                .map_or(Ok(()), |when| when.check(context));
+            match verdict {
+                Ok(()) => Some(command),
+                Err(reason) if keep_hidden => {
+                    command.hidden_reason = Some(reason);
+                    Some(command)
+                }
+                Err(_) => None,
+            }
+        })
+        .collect()
 }
 
 /// The project config that applies: searched up from the working directory, then from
@@ -362,7 +489,49 @@ fn run_subcommand(subcommand: Subcommands) -> Result<i32> {
         Subcommands::Man => {
             let mut out = Vec::new();
             clap_mangen::Man::new(command).render(&mut out)?;
-            std::io::Write::write_all(&mut std::io::stdout(), &out)?;
+            std::io::stdout().write_all(&out)?;
+        }
+        Subcommands::Shell { shell } => {
+            print!("{}", shell_widget::snippet(shell, bin_name));
+        }
+        Subcommands::Shortcuts {
+            action:
+                ShortcutsAction::Import {
+                    source,
+                    file,
+                    write,
+                },
+        } => {
+            let text = std::fs::read_to_string(&file)
+                .with_context(|| format!("reading {}", file.display()))?;
+            let shortcuts = import::import(source, &text)?;
+            let count = shortcuts.len();
+            let fragment = import::to_toml(shortcuts)?;
+            if !write {
+                print!("{fragment}");
+                return Ok(0);
+            }
+            let config_path = default_config_path()?;
+            if config_path.exists() {
+                let backup = tomlio::backup(&config_path)?;
+                eprintln!(
+                    "backed up {} -> {}",
+                    config_path.display(),
+                    backup.display()
+                );
+            } else if let Some(parent) = config_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&config_path)
+                .with_context(|| format!("opening {}", config_path.display()))?;
+            writeln!(
+                file,
+                "\n# imported with `smartopen shortcuts import`\n{fragment}"
+            )?;
+            println!("appended {count} shortcut(s) to {}", config_path.display());
         }
     }
     Ok(0)
@@ -464,23 +633,89 @@ fn available_labels(commands: &[CommandEntry]) -> String {
         .join(", ")
 }
 
-fn execute_or_print(
+/// Fill in parameters, then run, print, or describe the command.
+fn execute(
     command: &CommandEntry,
     targets: &[Target],
-    dry_run: bool,
+    opts: &RunOptions,
     history: &mut History,
+    cancelled: i32,
 ) -> Result<i32> {
-    if !dry_run {
-        // Recorded before running, so a long-lived command still counts as picked.
-        history.record(&command.label);
-        return run_command(command, targets);
+    let mut command = command.clone();
+
+    // Parameters first, so the plan below sees the final command line. The choices
+    // command runs in the shortcut's cwd, like the shortcut itself will.
+    let names = params::names(&command.run);
+    if !names.is_empty() {
+        let cwd = plan_command(&command, targets)?.cwd;
+        let label = command.label.clone();
+        let last = |name: &str| history.last_param(&label, name);
+        let Some(values) = params::resolve(
+            &command.run,
+            &command.param,
+            &opts.presets,
+            &last,
+            Shell::current(),
+            cwd.as_deref(),
+            &mut TerminalPrompter,
+        )?
+        else {
+            return Ok(cancelled);
+        };
+        command.run = params::substitute(&command.run, &values, Shell::current())?;
+        if opts.mode != Mode::DryRun {
+            history.record_params(&command.label, &values);
+        }
     }
 
-    let plan = plan_command(command, targets)?;
-    if let Some(cwd) = plan.cwd {
-        println!("cwd: {}", cwd.display());
-    }
-    println!("command: {}", plan.command);
+    let plan = plan_command(&command, targets)?;
 
-    Ok(0)
+    match opts.mode {
+        Mode::Print => {
+            // What the shell widget pastes: the command, with a `cd` when it wanted one.
+            match plan.cwd {
+                Some(cwd) if std::env::current_dir().ok().as_deref() != Some(cwd.as_path()) => {
+                    println!(
+                        "cd {} && {}",
+                        Shell::current().quote(&cwd.display().to_string())?,
+                        plan.command
+                    );
+                }
+                _ => println!("{}", plan.command),
+            }
+            history.record(&command.label);
+            Ok(0)
+        }
+        Mode::DryRun => {
+            if let Some(cwd) = plan.cwd {
+                println!("cwd: {}", cwd.display());
+            }
+            println!("command: {}", plan.command);
+            if command.terminal {
+                println!("terminal: yes");
+            }
+            Ok(0)
+        }
+        Mode::Run => {
+            if command.confirm && !opts.yes && !confirmed(&plan.command)? {
+                return Ok(cancelled);
+            }
+            // Recorded before running, so a long-lived command still counts as picked.
+            history.record(&command.label);
+            run_command(&command, targets)
+        }
+    }
+}
+
+/// `confirm = true`: show the rendered command, ask, default no.
+fn confirmed(command_line: &str) -> Result<bool> {
+    if !std::io::stdin().is_terminal() {
+        bail!("this command asks for confirmation and there is no terminal; pass --yes");
+    }
+    let mut stderr = std::io::stderr();
+    write!(stderr, "run: {command_line}\nproceed? [y/N] ")?;
+    stderr.flush()?;
+    let mut answer = String::new();
+    std::io::stdin().read_line(&mut answer)?;
+    Ok(matches!(answer.trim(), "y" | "Y" | "yes" | "YES"))
 }
