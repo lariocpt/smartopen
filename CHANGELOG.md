@@ -141,6 +141,11 @@ file manager, a shell keybinding, or the command line with one config.
   package-manager commands before anything is written or run; installs default to no.
   `--dry-run` stops at the review, `--yes` takes every recommendation, `--no-install`
   writes config only. An existing config keeps its shortcuts and `[menu]`.
+- **A public installer.** `curl -fsSL https://lariocpt.github.io/smartopen/install.sh | sh`
+  resolves the latest release, downloads the archive for this machine, verifies it
+  against the release's `SHA256SUMS`, and puts `smartopen` and `opn` in `~/.local/bin`.
+  POSIX sh, nothing is executable before it is verified, `--prefix`, `--version`,
+  `--source=apps` for the LAN mirror, `--download-only`. Linux gets the static musl build.
 - **A verified tool catalogue.** `smartopen tools list` shows every catalogue tool, whether
   it is installed, and the one command that installs it here — chosen from the package
   managers on `PATH` (`paru`/`yay` before `pacman`, then `cargo`, `brew`, `eget`, `pipx`;
