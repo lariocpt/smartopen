@@ -523,7 +523,16 @@ fn several_targets_render_paths() {
 #[test]
 fn doctor_json_has_a_status_per_command_and_list_json_omits_empty_sections() {
     let sandbox = Sandbox::new();
-    sandbox.write_config("[[shortcut]]\nlabel = \"Dyn\"\nrun = \"${EDITOR:-nano}\"\n");
+    // A program only known at run time, spelled for this OS's shell: `${…}` is a
+    // variable to `sh` and a missing program to `cmd`, which reads only `%VAR%`.
+    let dynamic = if cfg!(windows) {
+        "%EDITOR% --wait"
+    } else {
+        "${EDITOR:-nano}"
+    };
+    sandbox.write_config(&format!(
+        "[[shortcut]]\nlabel = \"Dyn\"\nrun = \"{dynamic}\"\n"
+    ));
     let out = sandbox
         .smartopen()
         .args(["config", "doctor", "--json"])
