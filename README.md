@@ -333,6 +333,12 @@ eval "$(smartopen shell zsh)"     # ~/.zshrc; also bash, fish
 `Ctrl-G` opens the launcher and puts the chosen command on your prompt line, unexecuted —
 edit it, then run it, and it lands in your history like anything else you typed.
 
+This is not a snippet manager. navi, pet and intelli-shell hold thousands of commands,
+with richer variable syntax and a community behind them — keep one of those for that.
+smartopen's shortcuts are the ten commands *this* repo needs: gated on where you are,
+quoted so a value with a `;` in it stays a value, and shipped in the repo's own
+`.smartopen.toml`. The import below is how the two meet.
+
 ### Bringing your existing snippets
 
 ```sh
