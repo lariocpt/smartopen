@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>smartopen</title>
+<meta name="description" content="Open anything from the terminal through a menu you wrote — from yazi, broot, your shell or the command line — on Linux, macOS and Windows.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f766e'/%3E%3Cpath d='M9 10h14M9 16h10M9 22h6' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<meta property="og:title" content="smartopen">
+<meta property="og:description" content="One TOML file. Every file, folder and URL opened through the menu you wrote — from yazi, broot, your shell, or a keystroke.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body,h1,h2,h3,p,figure,blockquote,dl,dd,ul,ol{margin:0}
+img,svg{max-width:100%;display:block}
+table{border-collapse:collapse}
+ul,ol{padding:0;list-style:none}
+
+:root{
+  --ground:#f6f4ee;
+  --panel:#fffdf8;
+  --panel-2:#eeeae0;
+  --line:#d8d2c3;
+  --text:#1b1a17;
+  --muted:#6b675c;
+  --accent:#0f766e;
+  --accent-ink:#0b5c56;
+  --accent-soft:#d8efe9;
+  --warn:#b45309;
+  --code-bg:#1e1c19;
+  --code-fg:#ece7da;
+  --code-dim:#8f897b;
+  --code-hi:#7dd3c8;
+  --shadow:0 1px 2px rgba(27,26,23,.06),0 12px 32px rgba(27,26,23,.06);
+  --display:"Fraunces",Georgia,"Times New Roman",serif;
+  --body:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#121311;--panel:#1a1c19;--panel-2:#22251f;--line:#30342c;
+    --text:#ebe8df;--muted:#9a978c;--accent:#5fd3c4;--accent-ink:#8fe3d8;--accent-soft:#163b37;
+    --warn:#f5a524;--code-bg:#0c0d0b;--code-fg:#e6e2d6;--code-dim:#767366;--code-hi:#7dd3c8;
+    --shadow:0 1px 2px rgba(0,0,0,.5),0 12px 32px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#121311;--panel:#1a1c19;--panel-2:#22251f;--line:#30342c;
+  --text:#ebe8df;--muted:#9a978c;--accent:#5fd3c4;--accent-ink:#8fe3d8;--accent-soft:#163b37;
+  --warn:#f5a524;--code-bg:#0c0d0b;--code-fg:#e6e2d6;--code-dim:#767366;--code-hi:#7dd3c8;
+  --shadow:0 1px 2px rgba(0,0,0,.5),0 12px 32px rgba(0,0,0,.35);
+}
+
+body{background:var(--ground);color:var(--text);font:16px/1.6 var(--body);}
+a{color:var(--accent-ink);text-decoration:none;border-bottom:1px solid transparent}
+a:hover{border-bottom-color:currentColor}
+code,pre,kbd{font-family:var(--mono);font-size:.92em}
+code{background:var(--panel-2);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);color:var(--code-fg);padding:1rem 1.15rem;border-radius:10px;overflow-x:auto;line-height:1.5;box-shadow:var(--shadow)}
+pre code{background:none;padding:0;font-size:.88rem}
+pre .c{color:var(--code-dim)} pre .k{color:var(--code-hi)}
+kbd{background:var(--panel-2);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:0 .4em;font-size:.82em}
+.wrap{max-width:66rem;margin:0 auto;padding:0 1.25rem}
+h1,h2,h3{font-family:var(--display);font-weight:700;line-height:1.15;letter-spacing:-.01em}
+h2{font-size:clamp(1.6rem,3vw,2.2rem);margin-bottom:.35em}
+h3{font-size:1.15rem;margin-bottom:.35em}
+.muted{color:var(--muted)}
+section{padding:3.5rem 0;border-top:1px solid var(--line)}
+section:first-of-type{border-top:0}
+.lead{font-size:1.1rem;max-width:44rem}
+
+header.hero{padding:4.5rem 0 3rem}
+.hero h1{font-size:clamp(2.6rem,7vw,4.6rem);font-weight:600;margin-bottom:.4rem}
+.hero .tag{font-size:clamp(1.15rem,2.2vw,1.45rem);max-width:38rem;color:var(--muted)}
+.hero .install{margin-top:1.6rem;display:grid;gap:.6rem;max-width:44rem}
+.hero .install pre{margin:0}
+.hero .links{margin-top:1.1rem;display:flex;gap:1.2rem;flex-wrap:wrap;font-weight:500}
+.badge{display:inline-block;background:var(--accent-soft);color:var(--accent-ink);border-radius:999px;padding:.15em .7em;font-size:.8rem;font-weight:600;letter-spacing:.02em;margin-bottom:1rem}
+
+.grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));margin-top:1.5rem}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:1.15rem 1.2rem;box-shadow:var(--shadow)}
+.card h3{margin-bottom:.4rem}
+.card p{color:var(--muted);font-size:.95rem}
+.card code{font-size:.85em}
+
+.doors{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));margin-top:1.5rem}
+.door{border-left:3px solid var(--accent);padding:.2rem 0 .2rem 1rem}
+.door b{display:block;font-family:var(--display);font-size:1.1rem;margin-bottom:.2rem}
+.door span{color:var(--muted);font-size:.95rem}
+
+.screen{margin-top:1.5rem;display:grid;gap:1rem;grid-template-columns:1fr}
+@media (min-width:52rem){.screen{grid-template-columns:1.2fr 1fr;align-items:start}}
+.screen pre{font-size:.8rem}
+.screen ul{color:var(--muted);display:grid;gap:.45rem;font-size:.95rem}
+.screen li b{color:var(--text)}
+
+table.plat{width:100%;font-size:.93rem;margin-top:1.4rem;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+table.plat th,table.plat td{padding:.6rem .8rem;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+table.plat th{font-weight:600;background:var(--panel-2)}
+table.plat tr:last-child td{border-bottom:0}
+.tablewrap{overflow-x:auto}
+.honest{margin-top:1rem;padding:1rem 1.15rem;border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:10px;background:var(--panel);font-size:.95rem}
+
+.cfg{display:grid;gap:1rem;grid-template-columns:1fr;margin-top:1.4rem}
+@media (min-width:56rem){.cfg{grid-template-columns:1fr 1fr}}
+.cfg pre{margin:0;height:100%}
+
+footer{padding:2.5rem 0 3.5rem;color:var(--muted);font-size:.9rem;border-top:1px solid var(--line)}
+footer .wrap{display:flex;gap:1.5rem;flex-wrap:wrap;justify-content:space-between}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="badge">Linux · macOS · Windows · one static binary</span>
+    <h1>smartopen</h1>
+    <p class="tag">Open anything from the terminal — through a menu you wrote — from yazi, broot, your shell, or a keystroke.</p>
+    <div class="install">
+<pre><code><span class="c"># Linux, macOS — verified against the release's SHA256SUMS before anything runs</span>
+curl -fsSL https://lariocpt.github.io/smartopen/install.sh | sh
+<span class="c"># anywhere with Rust</span>
+cargo install smartopen
+<span class="c"># then</span>
+smartopen wizard</code></pre>
+    </div>
+    <p class="links">
+      <a href="https://github.com/lariocpt/smartopen">GitHub</a>
+      <a href="https://github.com/lariocpt/smartopen/releases">Releases</a>
+      <a href="https://github.com/lariocpt/smartopen#readme">Documentation</a>
+      <a href="https://crates.io/crates/smartopen">crates.io</a>
+    </p>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>One file. Every door.</h2>
+    <p class="lead">A TOML file says which commands can open which files, folders and URLs, and which shortcuts you want a keystroke away. The same file drives every way you reach it.</p>
+    <div class="doors">
+      <div class="door"><b>yazi</b><span><code>smartopen yazi apply</code> — Enter on any file opens your menu, not a hard-coded viewer.</span></div>
+      <div class="door"><b>broot</b><span><code>smartopen broot apply</code> — broot has no per-type opener; now Enter on a file has one.</span></div>
+      <div class="door"><b>your shell</b><span><code>smartopen shell zsh</code> — <kbd>Ctrl</kbd>+<kbd>G</kbd> puts the pick on your prompt line, unexecuted.</span></div>
+      <div class="door"><b>a keybinding</b><span><code>smartopen</code> bare is a launcher for the shortcuts that make sense <em>here</em>.</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>A picker, not a list.</h2>
+    <div class="screen">
+<pre><code>$ smartopen notes.md
+┌ Choose a command ─────────┐ ┌ Action ───────────────────────────┐
+│ █                         │ │ Render Markdown                   │
+├ Items (3) ────────────────┤ │ Rendered view in glow             │
+│<span class="k">&gt; 1  [md]   Render Markdown</span>│ │                                   │
+│  2  [edit] Edit           │ │ Command                           │
+│  3  [finder] Reveal       │ │ glow -p '/home/u/docs/notes.md'   │
+│                           │ │                                   │
+│                           │ │ Executable                        │
+│                           │ │ glow: found at /usr/bin/glow      │
+│                           │ │                                   │
+│                           │ │ Target                            │
+│                           │ │ type: file · mime: text/markdown  │
+└───────────────────────────┘ └───────────────────────────────────┘
+ type to filter · ↑↓ move · 1-9 pick · Alt+key · Enter run · Esc</code></pre>
+      <ul>
+        <li><b>Fuzzy filter</b> with the matched letters highlighted; label hits outrank description hits.</li>
+        <li><b><kbd>1</kbd>–<kbd>9</kbd></b> pick a row; <code>key = "e"</code> binds <kbd>Alt</kbd>+<kbd>E</kbd> to a command even mid-filter.</li>
+        <li><b>What you pick often floats up</b> — a one-week half-life, config order as the tiebreak.</li>
+        <li><b>The right pane shows the truth</b>: the exact command line after quoting, whether its program is installed, what was detected about the file.</li>
+        <li><b>One match runs immediately.</b> <code>default = true</code> skips the menu; <code>--menu</code> brings it back.</li>
+        <li><b>Exits with the launched command's exit code.</b></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>A launcher that knows where you are.</h2>
+    <p class="lead">Shortcuts can depend on the directory, the environment and the tools installed; ask for parameters with a picker fed by a command; remember your last answer; and open in a new terminal window, spelled correctly for whichever terminal you use.</p>
+    <div class="cfg">
+<pre><code>[[shortcut]]
+label = "Cargo test"
+run   = "cargo test"
+group = "rust"
+<span class="k">[shortcut.when]</span>
+cwd_has = ["Cargo.toml"]   <span class="c"># searched upward, to .git</span>
+
+[[shortcut]]
+label = "Checkout branch"
+run   = "git checkout {{branch}}"
+<span class="k">[shortcut.when]</span>
+has = ["git"]              <span class="c"># vanishes where git is missing</span>
+<span class="k">[shortcut.param.branch]</span>
+choices = "git branch --format='%(refname:short)'"
+default = "last"           <span class="c"># your last answer comes first</span></code></pre>
+<pre><code>[[shortcut]]
+label   = "Deploy"
+run     = "ssh {{host}} 'systemctl restart app'"
+confirm = true             <span class="c"># shows the line, asks, default no</span>
+<span class="k">[shortcut.when]</span>
+env = ["SSH_AUTH_SOCK", "DEPLOY_ENV=prod*"]
+<span class="k">[shortcut.param.host]</span>
+prompt  = "Which host"
+default = "web-1"
+
+[[shortcut]]
+label    = "Git UI in a new window"
+run      = "gitui"
+terminal = true            <span class="c"># $TERMINAL, ghostty, foot, kitty,</span>
+cwd      = "."             <span class="c"># alacritty, wezterm, Terminal.app, wt</span></code></pre>
+    </div>
+    <p class="muted" style="margin-top:1rem">Already have navi cheats, pet snippets or tldr pages? <code>smartopen shortcuts import navi git.cheat</code> turns them into shortcuts — tags become groups, <code>&lt;arg&gt;</code> becomes a parameter, navi's <code>$ arg:</code> lines become choices.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Matching that sees past the extension.</h2>
+    <div class="grid">
+      <div class="card"><h3>MIME and shebang</h3><p><code>Makefile</code>, <code>Dockerfile</code>, a script with no suffix: the first 8 KiB decide. <code>mime = ["text/*"]</code>, <code>shebang = ["python*"]</code> — in yazi's vocabulary.</p></div>
+      <div class="card"><h3>URLs</h3><p><code>smartopen https://github.com/…</code> matches <code>[[url]]</code> by scheme and host glob, with <code>{url}</code>, <code>{scheme}</code>, <code>{host}</code>. <code>C:\…</code> is still a path.</p></div>
+      <div class="card"><h3>Several at once</h3><p><code>smartopen a.csv b.csv</code> offers only the commands every target matches; <code>{paths}</code> is all of them, each quoted.</p></div>
+      <div class="card"><h3>Project configs</h3><p>A <code>.smartopen.toml</code> above the working directory or the target — stopping at <code>.git</code> — layers its shortcuts first. A repo can ship its own.</p></div>
+      <div class="card"><h3>One config, three OSes</h3><p><code>platform = "macos"</code> on any command keeps it off the menu elsewhere. Placeholders are quoted for <code>sh</code> or <code>cmd</code>, whichever will run them.</p></div>
+      <div class="card"><h3>Honest tooling</h3><p><code>config doctor</code> says which programs are missing (and exits 0 unless <code>--strict</code>); a misspelt key is an error naming the valid ones; <code>--json</code> everywhere scripts need it.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>A first run that sets things up.</h2>
+    <p class="lead"><code>smartopen wizard</code> starts with the navigators — yazi and broot, installed first if missing — then walks popular file types one checklist at a time with the terminal tools that open them: ✓ installed, ↓ would be installed, ✗ not installable here. It shows the exact TOML and the exact package-manager commands before anything is written or run. Installs default to no.</p>
+<pre style="margin-top:1.2rem"><code>smartopen wizard --dry-run     <span class="c"># just the review</span>
+smartopen tools list           <span class="c"># the catalogue: what is installed, the one command for the rest</span></code></pre>
+    <p class="muted" style="margin-top:.8rem">Every install source in the catalogue was checked: a <code>cargo</code> entry means the crate of that name <em>is</em> the tool, a <code>pacman</code> entry means the Arch repos have it. Six popular names on crates.io are unrelated crates; a test refuses them.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Linux is the developed path. The rest is honest about itself.</h2>
+    <div class="tablewrap">
+    <table class="plat">
+      <tr><th></th><th>Linux</th><th>macOS</th><th>Windows</th></tr>
+      <tr><td>Commands run through</td><td><code>sh -c</code></td><td><code>sh -c</code></td><td><code>cmd /C</code></td></tr>
+      <tr><td>Config</td><td><code>~/.config/smartopen/</code></td><td><code>~/.config/smartopen/</code> — not Application Support</td><td><code>%APPDATA%\smartopen\</code></td></tr>
+      <tr><td>Starter config names tools that exist there</td><td>yes</td><td>yes</td><td>yes</td></tr>
+      <tr><td>yazi + broot integration</td><td>yes</td><td>yes</td><td>paths handled; CI advisory</td></tr>
+      <tr><td>Verified by</td><td>daily use · CI · real yazi and broot in a pty · five distros in containers</td><td>CI · real yazi and broot in a pty</td><td>CI, sandboxed CLI suite</td></tr>
+    </table>
+    </div>
+    <div class="honest">Every push compiles all eight targets, runs the sandboxed CLI suite on all three OSes, presses Enter in a <b>real</b> yazi and a <b>real</b> broot under a pty on Linux and macOS, and installs the static musl build in Alpine, Debian, Ubuntu, Fedora and Arch through the public installer. macOS and Windows pass those checks and see less human use — reports welcome.</div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Install</h2>
+<pre><code>curl -fsSL https://lariocpt.github.io/smartopen/install.sh | sh   <span class="c"># Linux (static musl), macOS</span>
+cargo install smartopen                                           <span class="c"># crates.io</span>
+brew install lariocpt/smartopen/smartopen                         <span class="c"># macOS / Linuxbrew</span>
+yay -S smartopen-bin                                              <span class="c"># Arch (AUR)</span></code></pre>
+    <p class="muted" style="margin-top:.8rem">Every release archive carries <code>smartopen</code>, its alias <code>opn</code>, the README and the license; one <code>SHA256SUMS</code> covers all eight and the installer verifies it before anything becomes executable. Windows builds are on the <a href="https://github.com/lariocpt/smartopen/releases">Releases</a> page.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>smartopen · MIT · <a href="https://github.com/lariocpt/smartopen">github.com/lariocpt/smartopen</a></span>
+    <span>This page is one file with no build step — <a href="https://github.com/lariocpt/smartopen/blob/main/docs/index.html">its source</a>.</span>
+  </div>
+</footer>
+
+</body>
+</html>
