@@ -52,8 +52,11 @@ widget's `$(…)`; frames must not end up in that variable. `/dev/tty` (`CONOUT$
 Windows), stderr as the fallback.
 
 **Config paths follow XDG on macOS too.** `~/.config`, not `~/Library/Application
-Support`; `%APPDATA%` on Windows. yazi's and broot's paths resolve by the same rule in
-`paths.rs`. Every resolver returns `Option` — never fall back to `.`.
+Support`; `%APPDATA%` on Windows; yazi agrees. broot does not: on macOS it reads
+`~/Library/Application Support/org.dystroy.broot`, and `BROOT_CONFIG_DIR` overrides it
+everywhere — `paths::broot_config_dir` resolves the way broot does, because a config
+written where broot does not look is worse than an error. Every resolver returns
+`Option` — never fall back to `.`.
 
 **Every install source in `catalog/tools.toml` is a verified claim.** A `cargo` key means
 the crate of that name IS the tool (crates.io); a `pacman` key means `pacman -Si` finds
@@ -79,9 +82,11 @@ unreadable file as empty and a failed save as one stderr line.
 | L5 published | the released archives downloaded back and smoked on every runner | `release.yml` |
 
 L3 needs `yazi`, `broot` and `zsh` on PATH. It answers yazi's DA1 terminal query
-(`ESC[0c` → `ESC[?62;22c`) because yazi waits for it before reading keys. **Windows L3 is
-advisory** (`continue-on-error`) until it has passed on three consecutive tags; promote it
-to required then and delete this sentence.
+(`ESC[0c` → `ESC[?62;22c`) because yazi waits for it before reading keys, and sets
+`BROOT_CONFIG_DIR` because broot does not follow XDG on macOS. **The suite is
+`cfg(unix)`; the Windows navigators job installs the tools and runs nothing** — it is
+`continue-on-error` and says so. Making the harness drive ConPTY, then three green tags,
+is the path to promoting it; delete this paragraph when that happens.
 
 `tests/cli.rs` and `tests/navigators.rs` sandbox `HOME`, `XDG_*`, `APPDATA` and
 `LOCALAPPDATA` into a tempdir. **Do the same when smoke-testing by hand**: `wizard --yes`,

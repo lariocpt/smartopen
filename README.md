@@ -77,8 +77,8 @@ in one menu, and the same file drives every way you reach it:
 | Config | `~/.config/smartopen/config.toml` (`$XDG_CONFIG_HOME`) | same — **not** `~/Library/Application Support` | `%APPDATA%\smartopen\config.toml` |
 | Starter config names tools that exist there | yes | yes (`open -R`, Terminal) | yes (`start`, `explorer`, `wt`) |
 | `terminal = true` opens | `$TERMINAL` / ghostty / foot / kitty / alacritty / wezterm / xterm | Terminal.app | Windows Terminal or `cmd` |
-| yazi + broot integration | yes | yes | config paths handled; verified by CI as advisory |
-| Verified by | daily use + CI + real yazi/broot in a pty | CI + real yazi/broot in a pty | CI (sandboxed CLI suite) |
+| yazi + broot integration | yes | yes (broot reads `~/Library/Application Support/org.dystroy.broot`, and smartopen writes there) | config paths handled; not yet covered by the navigator test |
+| Verified by | daily use + CI + real yazi/broot in a pty + five distros in containers | CI + real yazi/broot in a pty | CI (sandboxed CLI suite only) |
 
 CI compiles all eight targets (Linux gnu/musl, macOS, Windows; x86-64 and arm64) on every
 push, runs the sandboxed CLI suite on all three OSes, presses Enter in a **real** yazi and
