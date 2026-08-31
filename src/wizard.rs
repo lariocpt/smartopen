@@ -18,6 +18,7 @@ use anyhow::{Context, Result, bail};
 use crate::catalog::{ASSUMED, Catalog, Category, Choice, Tool};
 use crate::config::{
     Association, CommandEntry, Config, ExtensionAssociation, FolderAssociation, MatchRule,
+    UrlAssociation,
 };
 use crate::installer::{self, Manager, Step};
 use crate::menu;
@@ -341,6 +342,11 @@ pub fn build_plan(
         }
     }
 
+    // After the categories, so a named rule (`.env`) is offered before a catch-all.
+    let (associations, urls) = baseline(host);
+    plan.config.association.extend(associations);
+    plan.config.url = urls;
+
     for name in wanted_tools {
         let Some(tool) = catalog.tool(&name) else {
             continue;
@@ -370,12 +376,93 @@ fn command_for(choice: &Choice, host: Host) -> CommandEntry {
             (true, _) => "${SHELL:-sh}".to_string(),
             (false, _) => choice.run.clone(),
         },
-        cwd: terminal.then(|| "{path}".to_string()),
+        cwd: if terminal {
+            Some("{path}".to_string())
+        } else {
+            choice.cwd.clone()
+        },
         detach: choice.detach,
         platform: choice.platform,
         terminal,
         ..CommandEntry::default()
     }
+}
+
+/// What every wizard config gets whether or not a category was ticked — the same
+/// answers `config init` gives for a URL, a script with no extension, any other text
+/// file and an empty one. The review found the wizard's config answering all four with
+/// "no matching commands" while the starter config handled them.
+fn baseline(host: Host) -> (Vec<Association>, Vec<UrlAssociation>) {
+    let edit = || CommandEntry {
+        label: "Edit".to_string(),
+        description: "Open in your editor".to_string(),
+        icon: "[edit]".to_string(),
+        run: match host {
+            Host::Windows => "micro {paths}",
+            _ => "${EDITOR:-micro} {paths}",
+        }
+        .to_string(),
+        ..CommandEntry::default()
+    };
+
+    // A shebang is what an interpreter reads; cmd does not, so Windows only edits.
+    let mut scripts = Vec::new();
+    if host != Host::Windows {
+        scripts.push(CommandEntry {
+            label: "Run".to_string(),
+            description: "Run the script here, after showing the command".to_string(),
+            icon: "[run]".to_string(),
+            run: "{path}".to_string(),
+            confirm: true,
+            ..CommandEntry::default()
+        });
+    }
+    scripts.push(edit());
+
+    let associations = vec![
+        Association {
+            match_rule: MatchRule {
+                shebang: vec!["*".to_string()],
+                dirs: Some(false),
+                ..MatchRule::default()
+            },
+            commands: scripts,
+        },
+        Association {
+            match_rule: MatchRule {
+                mime: vec!["text/*".to_string()],
+                dirs: Some(false),
+                ..MatchRule::default()
+            },
+            commands: vec![edit()],
+        },
+        Association {
+            match_rule: MatchRule {
+                empty: Some(true),
+                dirs: Some(false),
+                ..MatchRule::default()
+            },
+            commands: vec![edit()],
+        },
+    ];
+    let urls = vec![UrlAssociation {
+        schemes: vec!["http".to_string(), "https".to_string()],
+        hosts: Vec::new(),
+        commands: vec![CommandEntry {
+            label: "Open in browser".to_string(),
+            description: "The default browser".to_string(),
+            icon: "[web]".to_string(),
+            run: match host {
+                Host::Windows => "start \"\" {url}",
+                Host::Macos => "open {url}",
+                _ => "xdg-open {url}",
+            }
+            .to_string(),
+            detach: true,
+            ..CommandEntry::default()
+        }],
+    }];
+    (associations, urls)
 }
 
 fn choice_row(
@@ -676,5 +763,85 @@ mod tests {
         );
         assert!(editor.checked, "$EDITOR is assumed present");
         assert_eq!(editor.marker, "✓");
+    }
+
+    #[test]
+    fn every_plan_answers_a_url_a_script_any_text_and_an_empty_file() {
+        let catalog = Catalog::builtin().unwrap();
+        for host in [Host::Linux, Host::Macos, Host::Windows] {
+            let plan = build_plan(&catalog, &[], &[], host, &nothing_installed);
+            let rules: Vec<&MatchRule> = plan
+                .config
+                .association
+                .iter()
+                .map(|a| &a.match_rule)
+                .collect();
+            assert!(
+                rules.iter().any(|r| r.shebang == ["*"]),
+                "{host:?}: shebang"
+            );
+            assert!(
+                rules.iter().any(|r| r.mime == ["text/*"]),
+                "{host:?}: text/*"
+            );
+            assert!(
+                rules.iter().any(|r| r.empty == Some(true)),
+                "{host:?}: empty"
+            );
+            assert_eq!(plan.config.url.len(), 1, "{host:?}");
+            assert_eq!(plan.config.url[0].schemes, ["http", "https"]);
+            let browser = &plan.config.url[0].commands[0].run;
+            assert!(browser.contains("{url}"), "{host:?}: {browser}");
+
+            let scripts = &plan.config.association[0].commands;
+            let runs = scripts.iter().any(|c| c.run == "{path}" && c.confirm);
+            assert_eq!(
+                runs,
+                host != Host::Windows,
+                "{host:?}: Run is a shebang thing"
+            );
+            assert!(scripts.iter().any(|c| c.label == "Edit"), "{host:?}");
+            // And nothing baseline uses sh syntax on Windows.
+            if host == Host::Windows {
+                for a in &plan.config.association {
+                    for c in &a.commands {
+                        assert!(!c.run.contains("${"), "{}", c.run);
+                    }
+                }
+            }
+            let text = toml::to_string_pretty(&plan.config).unwrap();
+            let back: Config = toml::from_str(&text).unwrap();
+            assert_eq!(back.association.len(), 3, "{host:?}: parses back");
+        }
+
+        // A ticked category's rule comes before the catch-alls.
+        let env = catalog.categories.iter().find(|c| c.id == "env").unwrap();
+        let plan = build_plan(
+            &catalog,
+            &[(env, vec![&env.choices[0]])],
+            &[],
+            Host::Linux,
+            &nothing_installed,
+        );
+        assert_eq!(
+            plan.config.association[0].match_rule.name_patterns,
+            [".env", ".env.*", "*.env"]
+        );
+        assert_eq!(plan.config.association.len(), 4);
+    }
+
+    #[test]
+    fn a_choice_with_cwd_runs_the_tool_in_that_folder() {
+        let catalog = Catalog::builtin().unwrap();
+        let folders = catalog
+            .categories
+            .iter()
+            .find(|c| c.id == "directories")
+            .unwrap();
+        let gitui = folders.choices.iter().find(|c| c.tool == "gitui").unwrap();
+        let command = command_for(gitui, Host::Linux);
+        assert_eq!(command.run, "gitui");
+        assert_eq!(command.cwd.as_deref(), Some("{path}"));
+        assert!(!command.terminal);
     }
 }

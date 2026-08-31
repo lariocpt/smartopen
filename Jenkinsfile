@@ -21,7 +21,9 @@ pipeline {
     agent any
     options {
         disableConcurrentBuilds()
-        buildDiscarder(logRotator(numToKeepStr: '20'))
+        // Every fifteen minutes is ~100 runs a day; keep enough that the last run that
+        // actually mirrored something is still there to read.
+        buildDiscarder(logRotator(numToKeepStr: '200'))
         timeout(time: 20, unit: 'MINUTES')
     }
     // GitHub cannot reach this Jenkins, so it asks rather than being told. Polling the
@@ -45,25 +47,48 @@ pipeline {
         stage('Resolve') {
             steps {
                 script {
+                    // Egress is checked HERE, before anything depends on it: this stage
+                    // runs every fifteen minutes, and a quiet NOT_BUILT beats a red build.
+                    def online = sh(returnStatus: true, script: '''
+                        curl -fsS -o /dev/null -m 20 https://github.com
+                    ''') == 0
+                    if (!online) {
+                        currentBuild.result = 'NOT_BUILT'
+                        currentBuild.description = 'no route to github.com'
+                        env.NEEDED = '0'
+                        return
+                    }
+
+                    // The /releases/latest redirect lands on /releases/tag/vX.Y.Z and
+                    // excludes drafts and prereleases — exactly the set to mirror. With no
+                    // release yet it lands on /releases and the tag comes back as
+                    // "releases"; while the repository is private it is a 404 and comes
+                    // back empty. Both are a quiet NOT_BUILT, not an error, for the same
+                    // reason as above.
                     env.TAG = params.TAG?.trim() ?: sh(returnStdout: true, script: '''
-                        set -eu
-                        # The /releases/latest redirect lands on /releases/tag/vX.Y.Z and
-                        # excludes drafts and prereleases — exactly the set to mirror.
                         url=$(curl -fsS -o /dev/null -w '%{url_effective}' -L -I \
-                              "https://github.com/lariocpt/smartopen/releases/latest")
+                              "https://github.com/${GH_REPO}/releases/latest" || true)
                         printf '%s' "${url##*/}"
                     ''').trim()
 
-                    if (!(env.TAG ==~ /^v[0-9].*/)) { error "not a release tag: '${env.TAG}'" }
+                    if (!(env.TAG ==~ /^v[0-9][0-9A-Za-z.+-]*$/)) {
+                        currentBuild.result = 'NOT_BUILT'
+                        currentBuild.description = "no release to mirror (got '${env.TAG}')"
+                        env.NEEDED = '0'
+                        return
+                    }
                     env.VERSION = env.TAG.substring(1)
 
                     // Already mirrored? Then this poll is a no-op, and the build stops
-                    // rather than churning /srv/apps every fifteen minutes.
-                    def onPlane = sh(returnStatus: true, script: """
-                        awk -F'\\t' -v v='${env.VERSION}' \
-                            '\$1=="tool" && \$2=="smartopen" && \$3==v && index(\$7,"/latest/")>0 {x++} END{exit !x}' \
+                    // rather than churning /srv/apps every fifteen minutes. The version
+                    // reaches the shell through the environment, never by interpolation:
+                    // a Groovy string with a tag name inside shell quotes is an injection
+                    // waiting for a tag with a quote in it.
+                    def onPlane = sh(returnStatus: true, script: '''
+                        awk -F'\t' -v v="$VERSION" \
+                            '$1=="tool" && $2=="smartopen" && $3==v && index($7,"/latest/")>0 {x++} END{exit !x}' \
                             /srv/apps/index.tsv
-                    """) == 0
+                    ''') == 0
                     env.NEEDED = (onPlane && !params.FORCE) ? '0' : '1'
 
                     echo "tag=${env.TAG} version=${env.VERSION} onPlane=${onPlane} needed=${env.NEEDED}"
@@ -178,10 +203,13 @@ pipeline {
                     needed=$(objdump -p out/smartopen | grep -c NEEDED || true)
                     [ "$needed" = 0 ] || { echo "FAIL: out/smartopen has $needed NEEDED entries; the mirror serves the static build"; exit 1; }
 
+                    # An -rc tag is a rehearsal of the version it is a candidate for, and
+                    # the binary reports that version: compare the base, as Source does.
+                    want="smartopen ${VERSION%%-*}"
                     for bin in smartopen opn; do
                         got=$(./out/$bin --version | tr -d '\\r')
-                        [ "$got" = "smartopen $VERSION" ] \
-                          || { echo "FAIL: out/$bin reports '$got', expected 'smartopen $VERSION'"; exit 1; }
+                        [ "$got" = "$want" ] \
+                          || { echo "FAIL: out/$bin reports '$got', expected '$want'"; exit 1; }
                     done
 
                     # The CLI smoke, in a sandboxed home — never the jenkins user's config.

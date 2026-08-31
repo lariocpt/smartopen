@@ -4,7 +4,7 @@
 # default app (the empty "" is the window title `start` insists on), `explorer` reveals,
 # and there is no `${EDITOR:-…}` — name the editor. Placeholders are double-quoted for
 # cmd automatically, so `{path}` is safe with spaces. This is the config
-# `smartopen --init-config` writes on Windows; the Linux and macOS ones live beside it.
+# `smartopen config init` writes on Windows; the Linux and macOS ones live beside it.
 
 # [menu]
 # art_file = "art/default.txt"

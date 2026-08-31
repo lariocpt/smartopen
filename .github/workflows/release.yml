@@ -16,12 +16,21 @@ name: release
 on:
   push:
     tags: ['v*']
+  # A dispatch is for a tag whose release does not exist yet or is still a draft — a
+  # workflow file fixed after the tag was pushed, say. It is NOT a retry for a published
+  # release: create-gh-release-action deletes the existing release first, and every
+  # archive is rebuilt with new checksums, which breaks the Homebrew formula, the PKGBUILD
+  # and the LAN mirror's byte-identity assertion. One failed job in a finished run (a
+  # missing CARGO_REGISTRY_TOKEN, say) is re-run alone: gh run rerun <run-id> --failed
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag to (re)publish, e.g. v0.2.0'
+        description: 'Tag to publish, e.g. v0.2.0 — only while its release is absent or a draft, never for a published one (see release.yml)'
         required: true
 
+# Nothing by default; each job asks for exactly what it needs. That leaves a job with NO
+# token scopes, and checking out a private repository needs `contents: read` — so every
+# job that checks out says so. Harmless on a public repository.
 permissions: {}
 
 concurrency:
@@ -34,6 +43,8 @@ env:
 jobs:
   gate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       tag: ${{ steps.t.outputs.tag }}
       version: ${{ steps.v.outputs.version }}
@@ -203,6 +214,8 @@ jobs:
           cat dist/SHA256SUMS
           [ "$(wc -l < dist/SHA256SUMS)" -eq 8 ] || { echo "::error::expected 8 archives, got $(wc -l < dist/SHA256SUMS)"; exit 1; }
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" dist/SHA256SUMS --clobber
+      # Needs a PUBLIC repository: attestations are not available on a user-owned
+      # private one, and this job failing leaves the release a draft — as intended.
       - uses: actions/attest-build-provenance@v3
         with:
           subject-path: dist/*
@@ -303,6 +316,8 @@ jobs:
     needs: [gate, publish]
     if: ${{ github.event.repository.private == false && needs.gate.outputs.prerelease == 'false' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
         with:
@@ -327,6 +342,8 @@ jobs:
     needs: [gate, publish]
     if: ${{ needs.gate.outputs.prerelease == 'false' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
         with:

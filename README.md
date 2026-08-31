@@ -29,7 +29,7 @@ $ smartopen notes.md
 │> 1  [md]   Render Markdown│ │ Rendered view in glow                  │
 │  2  [edit] Edit           │ │                                        │
 │  3  [finder] Reveal       │ │ Command                                │
-│                           │ │ glow -p '/home/u/docs/notes.md'        │
+│                           │ │ glow -p /home/u/docs/notes.md          │
 │                           │ │                                        │
 │                           │ │ Executable                             │
 │                           │ │ glow: found at /usr/bin/glow           │
@@ -57,7 +57,7 @@ in one menu, and the same file drives every way you reach it:
 | **broot** | `smartopen broot apply` binds Enter on files to the same menu (broot has no per-type opener of its own) |
 | **your shell** | `smartopen shell zsh` binds `Ctrl-G`: pick a shortcut, it lands on the prompt line, unexecuted |
 | **a keybinding** | `smartopen` with no arguments is a shortcut launcher |
-| **a script** | `smartopen --command "Render Markdown" file.md`, `--dry-run`, `--print`, `--json` |
+| **a script** | `smartopen --command "Render Markdown" file.md`, `--dry-run`, `--print`, `config doctor --json` |
 
 | | `smartopen` | `xdg-open` / `open` | `handlr` | `rifle` (ranger) | `openwith-fzf` |
 |---|---|---|---|---|---|
