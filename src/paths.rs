@@ -52,15 +52,34 @@ pub fn yazi_config_path() -> Option<PathBuf> {
     Some(base.join("yazi.toml"))
 }
 
-/// broot's config directory: `~/.config/broot` on Unix and macOS,
-/// `%APPDATA%\dystroy\broot\config` on Windows.
+/// broot's config directory. broot does NOT follow XDG on macOS: it uses
+/// `~/Library/Application Support/org.dystroy.broot` there (the `directories` crate's
+/// project dir), `~/.config/broot` on other Unixes, `%APPDATA%\dystroy\broot\config` on
+/// Windows — and `BROOT_CONFIG_DIR` overrides all three. The macOS navigator test found
+/// the difference: a config written to `~/.config/broot` was simply never read.
 pub fn broot_config_dir() -> Option<PathBuf> {
-    let base = config_base()?;
+    if let Some(explicit) = env::var_os("BROOT_CONFIG_DIR").map(PathBuf::from)
+        && explicit.is_absolute()
+    {
+        return Some(explicit);
+    }
     #[cfg(windows)]
-    let dir = base.join("dystroy").join("broot").join("config");
-    #[cfg(not(windows))]
-    let dir = base.join("broot");
-    Some(dir)
+    {
+        Some(config_base()?.join("dystroy").join("broot").join("config"))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Some(
+            home_dir()?
+                .join("Library")
+                .join("Application Support")
+                .join("org.dystroy.broot"),
+        )
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        Some(config_base()?.join("broot"))
+    }
 }
 
 fn config_base() -> Option<PathBuf> {
@@ -105,11 +124,22 @@ mod tests {
     #[test]
     fn explicit_absolute_base_wins() {
         let base = resolve_base(
-            Some(PathBuf::from("/x/cfg")),
+            Some(PathBuf::from(if cfg!(windows) {
+                r"C:\x\cfg"
+            } else {
+                "/x/cfg"
+            })),
             Some(PathBuf::from("/home/u")),
             &[".config"],
         );
-        assert_eq!(base, Some(PathBuf::from("/x/cfg")));
+        assert_eq!(
+            base,
+            Some(PathBuf::from(if cfg!(windows) {
+                r"C:\x\cfg"
+            } else {
+                "/x/cfg"
+            }))
+        );
     }
 
     #[test]
