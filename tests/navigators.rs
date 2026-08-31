@@ -388,7 +388,9 @@ fn the_zsh_widget_puts_the_pick_on_the_prompt_line_unexecuted() {
     .unwrap();
 
     let mut cmd = CommandBuilder::new("zsh");
-    cmd.args(["-i"]);
+    // -d skips /etc/zsh/*: Ubuntu's global rc runs compinit, which stops at an
+    // "insecure directories" prompt on the runner. Only the sandbox .zshrc is wanted.
+    cmd.args(["-d", "-i"]);
     sandbox.env(&mut cmd);
     cmd.env("ZDOTDIR", &zdotdir);
     let mut pty = Pty::spawn(cmd);
