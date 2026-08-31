@@ -5,8 +5,8 @@ use std::process::{Command, Stdio};
 use anyhow::{Context, Result, bail};
 
 use crate::config::CommandEntry;
-use crate::matcher::Target;
 use crate::shell::Shell;
+use crate::target::Target;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionPlan {
@@ -35,11 +35,17 @@ impl CommandAvailability {
     }
 }
 
+/// Every placeholder a command may use. `{path}`… come from the first target; `{paths}`
+/// is every target; the URL three render a file as `file://…` / `file` / empty.
+pub const PLACEHOLDERS: &[&str] = &[
+    "{path}", "{paths}", "{dir}", "{name}", "{stem}", "{ext}", "{url}", "{scheme}", "{host}",
+];
+
 /// Run the command and return the exit code the child reported, so the launcher exits the
 /// way the launched program did. A detached launch reports 0: there is nothing to wait
 /// for. Only a failure to start at all is an error.
-pub fn run_command(command: &CommandEntry, target: Option<&Target>) -> Result<i32> {
-    let plan = plan_command(command, target)?;
+pub fn run_command(command: &CommandEntry, targets: &[Target]) -> Result<i32> {
+    let plan = plan_command(command, targets)?;
 
     if command.detach {
         spawn_detached(&plan, command)?;
@@ -119,8 +125,8 @@ fn detach_from_terminal(process: &mut Command) {
 #[cfg(not(any(unix, windows)))]
 fn detach_from_terminal(_process: &mut Command) {}
 
-pub fn plan_command(command: &CommandEntry, target: Option<&Target>) -> Result<ExecutionPlan> {
-    let command_line = render_command(command, target)?;
+pub fn plan_command(command: &CommandEntry, targets: &[Target]) -> Result<ExecutionPlan> {
+    let command_line = render_command(command, targets)?;
     let cwd = command
         .cwd
         .as_deref()
@@ -146,20 +152,20 @@ pub fn command_availability(command_line: &str) -> CommandAvailability {
 }
 
 /// Substitute the target placeholders, quoted for the shell this OS runs commands through.
-pub fn render_command(command: &CommandEntry, target: Option<&Target>) -> Result<String> {
-    render_command_for(Shell::current(), command, target)
+pub fn render_command(command: &CommandEntry, targets: &[Target]) -> Result<String> {
+    render_command_for(Shell::current(), command, targets)
 }
 
 /// [`render_command`] for an explicit shell, so both quoting rules are testable anywhere.
 pub fn render_command_for(
     shell: Shell,
     command: &CommandEntry,
-    target: Option<&Target>,
+    targets: &[Target],
 ) -> Result<String> {
-    let Some(target) = target else {
-        if contains_path_placeholder(&command.run) {
+    let Some(first) = targets.first() else {
+        if contains_placeholder(&command.run) {
             bail!(
-                "shortcut '{}' uses a path placeholder, but no path was provided",
+                "shortcut '{}' uses a target placeholder, but no path or URL was provided",
                 command.label
             );
         }
@@ -173,13 +179,26 @@ pub fn render_command_for(
             .with_context(|| format!("cannot render command '{}'", command.label))
     };
 
+    let mut all_paths = Vec::with_capacity(targets.len());
+    for target in targets {
+        all_paths.push(quote(&target.path.display().to_string())?);
+    }
+    let (scheme, host) = match &first.url {
+        Some(url) => (url.scheme.as_str(), url.host.as_str()),
+        None => ("file", ""),
+    };
+
     Ok(command
         .run
-        .replace("{path}", &quote(&target.path.display().to_string())?)
-        .replace("{dir}", &quote(&target.dir.display().to_string())?)
-        .replace("{name}", &quote(&target.name)?)
-        .replace("{stem}", &quote(&target.stem)?)
-        .replace("{ext}", &quote(&target.ext)?))
+        .replace("{paths}", &all_paths.join(" "))
+        .replace("{path}", &quote(&first.path.display().to_string())?)
+        .replace("{dir}", &quote(&first.dir.display().to_string())?)
+        .replace("{name}", &quote(&first.name)?)
+        .replace("{stem}", &quote(&first.stem)?)
+        .replace("{ext}", &quote(&first.ext)?)
+        .replace("{url}", &quote(&first.as_url_string())?)
+        .replace("{scheme}", &quote(scheme)?)
+        .replace("{host}", &quote(host)?))
 }
 
 fn expand_path(path: &str) -> Result<PathBuf> {
@@ -189,8 +208,8 @@ fn expand_path(path: &str) -> Result<PathBuf> {
     Ok(PathBuf::from(expanded))
 }
 
-fn contains_path_placeholder(command: &str) -> bool {
-    ["{path}", "{dir}", "{name}", "{stem}", "{ext}"]
+fn contains_placeholder(command: &str) -> bool {
+    PLACEHOLDERS
         .iter()
         .any(|placeholder| command.contains(placeholder))
 }
@@ -354,18 +373,6 @@ fn executable_names(executable: &str) -> Vec<String> {
 mod tests {
     use super::*;
 
-    fn target_with_path(path: PathBuf) -> Target {
-        Target {
-            path,
-            dir: PathBuf::from("/tmp/project dir"),
-            name: "hello world.rs".to_string(),
-            stem: "hello world".to_string(),
-            ext: "rs".to_string(),
-            is_dir: false,
-            is_empty: false,
-        }
-    }
-
     fn command(run: &str) -> CommandEntry {
         CommandEntry {
             label: "Open".to_string(),
@@ -374,27 +381,29 @@ mod tests {
         }
     }
 
+    fn render(shell: Shell, run: &str, targets: &[Target]) -> Result<String> {
+        render_command_for(shell, &command(run), targets)
+    }
+
     #[test]
     fn posix_render_single_quotes_path_placeholders() {
-        let target = target_with_path(PathBuf::from("/tmp/project dir/hello world.rs"));
+        let target = Target::fake_file("/tmp/project dir/hello world.rs");
 
-        let rendered = render_command_for(Shell::Posix, &command("vim {path}"), Some(&target))
-            .expect("command should render");
+        let rendered = render(Shell::Posix, "vim {path}", &[target]).unwrap();
 
         assert_eq!(rendered, "vim '/tmp/project dir/hello world.rs'");
     }
 
     #[test]
     fn cmd_render_double_quotes_path_placeholders() {
-        let mut target = target_with_path(PathBuf::from(r"C:\project dir\hello world.rs"));
+        // Built by hand: a Unix `Path` does not split on backslashes, and this test runs
+        // on every OS.
+        let mut target = Target::fake_file("/placeholder.rs");
+        target.path = PathBuf::from(r"C:\project dir\hello world.rs");
         target.dir = PathBuf::from(r"C:\project dir");
+        target.name = "hello world.rs".to_string();
 
-        let rendered = render_command_for(
-            Shell::Cmd,
-            &command("micro {path} {dir} {name}"),
-            Some(&target),
-        )
-        .expect("command should render");
+        let rendered = render(Shell::Cmd, "micro {path} {dir} {name}", &[target]).unwrap();
 
         assert_eq!(
             rendered,
@@ -404,31 +413,59 @@ mod tests {
 
     #[test]
     fn cmd_render_refuses_a_percent_in_the_path() {
-        let target = target_with_path(PathBuf::from(r"C:\100%\a.rs"));
+        let target = Target::fake_file(r"C:\100%\a.rs");
 
-        let error = render_command_for(Shell::Cmd, &command("micro {path}"), Some(&target))
-            .expect_err("a % cannot be quoted for cmd");
+        let error = render(Shell::Cmd, "micro {path}", &[target]).expect_err("% cannot be quoted");
 
         assert!(error.to_string().contains("cannot render command 'Open'"));
     }
 
     #[test]
-    fn render_shortcut_rejects_path_placeholder() {
-        assert!(render_command_for(Shell::Posix, &command("vim {path}"), None).is_err());
+    fn render_shortcut_rejects_target_placeholders() {
+        assert!(render(Shell::Posix, "vim {path}", &[]).is_err());
+        assert!(render(Shell::Posix, "open {url}", &[]).is_err());
+        assert_eq!(
+            render(Shell::Posix, "cargo test", &[]).unwrap(),
+            "cargo test"
+        );
     }
 
     #[test]
     fn render_command_preserves_shell_default_expansion() {
-        let target = target_with_path(PathBuf::from("/tmp/file.rs"));
+        let target = Target::fake_file("/tmp/file.rs");
 
-        let rendered = render_command_for(
-            Shell::Posix,
-            &command("${EDITOR:-nano} {path}"),
-            Some(&target),
-        )
-        .expect("command should render");
+        let rendered = render(Shell::Posix, "${EDITOR:-nano} {path}", &[target]).unwrap();
 
         assert_eq!(rendered, "${EDITOR:-nano} /tmp/file.rs");
+    }
+
+    #[test]
+    fn paths_placeholder_renders_every_target_and_path_the_first() {
+        let targets = [
+            Target::fake_file("/tmp/a b.csv"),
+            Target::fake_file("/tmp/c.csv"),
+        ];
+
+        let rendered = render(Shell::Posix, "xan cat {paths} --first {path}", &targets).unwrap();
+
+        assert_eq!(
+            rendered,
+            "xan cat '/tmp/a b.csv' /tmp/c.csv --first '/tmp/a b.csv'"
+        );
+    }
+
+    #[test]
+    fn url_placeholders_come_from_the_url_and_degrade_for_files() {
+        let url = Target::from_arg("https://Example.com/x/report.pdf").unwrap();
+        let rendered = render(Shell::Posix, "open {url} {scheme} {host} {name}", &[url]).unwrap();
+        assert_eq!(
+            rendered,
+            "open https://Example.com/x/report.pdf https example.com report.pdf"
+        );
+
+        let file = Target::fake_file("/tmp/a.txt");
+        let rendered = render(Shell::Posix, "open {url} {scheme} {host}", &[file]).unwrap();
+        assert_eq!(rendered, "open file:///tmp/a.txt file ''");
     }
 
     #[test]
@@ -440,7 +477,7 @@ mod tests {
             ..CommandEntry::default()
         };
 
-        let plan = plan_command(&command, None).expect("command should plan");
+        let plan = plan_command(&command, &[]).expect("command should plan");
 
         assert_eq!(plan.command, "cargo build");
         assert!(plan.cwd.is_some());

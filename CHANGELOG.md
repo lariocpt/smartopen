@@ -68,3 +68,22 @@ file manager, a shell keybinding, or the command line with one config.
   belonging to another OS.
 - **`smartopen completions <bash|zsh|fish|powershell|elvish>`** and **`smartopen man`**,
   each naming whichever binary was invoked, so `opn completions zsh` completes `opn`.
+- **Files without a telling name.** `Makefile`, `Dockerfile`, a script with no extension:
+  the first 8 KiB decide. A `#!` line names the interpreter (`shebang = ["python*"]`),
+  magic bytes and a short extension table give a MIME type (`mime = ["text/*"]`), in
+  yazi's vocabulary — `inode/directory`, `inode/empty`, `image/png`. Both are new keys
+  on `[association.match]`, and the picker's detail pane shows what was detected.
+- **URLs.** `smartopen https://github.com/lariocpt/smartopen` matches a new `[[url]]`
+  section by `schemes` and host globs (`hosts = ["*.github.com"]`), with `{url}`,
+  `{scheme}` and `{host}` placeholders. Anything starting with a two-or-more-character
+  scheme is a URL, so `C:\…` is still a path.
+- **Several targets at once.** `smartopen a.csv b.csv` offers only the commands every
+  target matches; `{path}` is the first and the new `{paths}` is all of them, quoted.
+- **`priority = 10`** sorts a command up the menu (equal priorities keep config order),
+  and **`default = true`** runs it without a menu when it is the one default among the
+  matches. `--menu` forces the menu anyway.
+- **Project configs.** A `.smartopen.toml` (or `.opn.toml`) found above the working
+  directory or the target — stopping at `.git`, home, or the root — is layered over the
+  user config, its associations and shortcuts first. A repo can ship its own shortcuts,
+  and they appear only inside it. `--no-project` ignores them; `--config` names the one in
+  effect.
