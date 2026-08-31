@@ -121,3 +121,17 @@ file manager, a shell keybinding, or the command line with one config.
   a `yazi.toml` that calls `opn`; `--bin` overrides. `--rules` writes explicit per-type
   viewers from the built-in spec instead, `--spec` swaps in your own, and `--target`
   points at a different `yazi.toml` or broot directory.
+- **A setup wizard.** `smartopen wizard` — offered on the first run when there is no
+  config — starts with the navigators (set up yazi and broot, installing them first if
+  they are missing), then walks popular file types one checklist at a time with the
+  terminal tools that open them: what is installed is ticked, what would be installed is
+  marked, and the recommendation comes first. A review shows the exact TOML and the exact
+  package-manager commands before anything is written or run; installs default to no.
+  `--dry-run` stops at the review, `--yes` takes every recommendation, `--no-install`
+  writes config only. An existing config keeps its shortcuts and `[menu]`.
+- **A verified tool catalogue.** `smartopen tools list` shows every catalogue tool, whether
+  it is installed, and the one command that installs it here — chosen from the package
+  managers on `PATH` (`paru`/`yay` before `pacman`, then `cargo`, `brew`, `eget`, `pipx`;
+  `brew` first on macOS; `winget`/`scoop` on Windows). Every install source in the
+  catalogue was checked: on crates.io, `micro`, `glow`, `chafa`, `mpv`, `helix` and `hl`
+  are unrelated crates sharing the name, and a test refuses a `cargo` source for them.

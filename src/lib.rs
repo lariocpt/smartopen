@@ -1,4 +1,5 @@
 mod broot;
+mod catalog;
 mod config;
 mod diff;
 mod doctor;
@@ -6,6 +7,7 @@ mod engine;
 mod fuzzy;
 mod history;
 mod import;
+mod installer;
 mod launcher;
 mod matcher;
 mod menu;
@@ -22,6 +24,7 @@ mod spec;
 mod target;
 mod terminal;
 mod tomlio;
+mod wizard;
 
 use std::collections::BTreeMap;
 use std::io::{IsTerminal, Write};
@@ -161,6 +164,23 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Subcommands {
+    /// Set up navigators and file associations step by step, installing tools on request
+    Wizard {
+        /// Show what would be written and run, then stop
+        #[arg(long)]
+        dry_run: bool,
+        /// Take every recommendation without asking (the review is still shown)
+        #[arg(long)]
+        yes: bool,
+        /// Write the config but never run a package manager
+        #[arg(long)]
+        no_install: bool,
+    },
+    /// The wizard's tool catalogue: what exists, what is installed, how to get the rest
+    Tools {
+        #[command(subcommand)]
+        action: ToolsAction,
+    },
     /// Show, create, edit or check the config
     Config {
         #[command(subcommand)]
@@ -196,6 +216,15 @@ enum Subcommands {
     Shortcuts {
         #[command(subcommand)]
         action: ShortcutsAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ToolsAction {
+    /// List every catalogue tool for this OS, marking the installed ones
+    List {
+        #[arg(long, help = "Print JSON instead of text")]
+        json: bool,
     },
 }
 
@@ -303,6 +332,13 @@ enum ShortcutsAction {
 /// The process exit code for `main`: the launched command's own code on success, 1 after
 /// printing an error. Kept out of `run` so the binaries stay one line each.
 pub fn main_exit_code() -> i32 {
+    // `smartopen tools list | head` must end quietly, the way every Unix tool does, not
+    // with a "failed printing to stdout" panic: let SIGPIPE terminate the process again.
+    #[cfg(unix)]
+    // SAFETY: called first thing in main, before any other thread exists.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     match run() {
         Ok(code) => code,
         Err(error) => {
@@ -371,6 +407,35 @@ pub fn run() -> Result<i32> {
         .map(|target| target.dir.clone())
         .collect();
     let project_path = discover_project(cli.no_project, &target_dirs);
+
+    // First run: no config anywhere and a person at the terminal. Offer the wizard
+    // instead of an error that tells them to go write TOML.
+    if !config_path.exists()
+        && project_path.is_none()
+        && cli.command.is_none()
+        && std::io::stdin().is_terminal()
+        && std::io::stdout().is_terminal()
+    {
+        eprint!(
+            "No config found at {}.\nRun the setup wizard? [Y/n] ",
+            config_path.display()
+        );
+        std::io::stderr().flush()?;
+        let mut answer = String::new();
+        std::io::stdin().read_line(&mut answer)?;
+        if matches!(answer.trim(), "" | "y" | "Y" | "yes") {
+            let code = wizard::run(&config_path, wizard::Options::default())?;
+            if code != 0 || !config_path.exists() {
+                return Ok(code);
+            }
+        } else {
+            bail!(
+                "no config at {}\ncreate one with: smartopen wizard   (or: smartopen config init)",
+                config_path.display()
+            );
+        }
+    }
+
     let config = load_effective_config(&config_path, project_path.as_deref())?;
 
     let mut history = if cli.no_history {
@@ -602,6 +667,23 @@ fn run_subcommand(subcommand: Subcommands, config_path: &Path, no_project: bool)
     let mut command = Cli::command().name(bin_name);
 
     match subcommand {
+        Subcommands::Wizard {
+            dry_run,
+            yes,
+            no_install,
+        } => {
+            return wizard::run(
+                config_path,
+                wizard::Options {
+                    dry_run,
+                    yes,
+                    no_install,
+                },
+            );
+        }
+        Subcommands::Tools {
+            action: ToolsAction::List { json },
+        } => return wizard::list_tools(json),
         Subcommands::Config { action } => {
             return run_config_action(action, config_path, no_project);
         }

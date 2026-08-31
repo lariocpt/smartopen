@@ -44,10 +44,10 @@ impl MenuConfig {
 #[serde(deny_unknown_fields)]
 pub struct UrlAssociation {
     /// `https`, `mailto`, … ; empty means any scheme.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub schemes: Vec<String>,
     /// Host globs such as `github.com` or `*.example.com`; empty means any host.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hosts: Vec<String>,
     #[serde(default, rename = "command")]
     pub commands: Vec<CommandEntry>,
@@ -73,7 +73,7 @@ pub struct Association {
 #[serde(deny_unknown_fields)]
 pub struct ExtensionAssociation {
     pub extensions: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub names: Vec<String>,
     #[serde(default, rename = "command")]
     pub commands: Vec<CommandEntry>,
@@ -82,9 +82,9 @@ pub struct ExtensionAssociation {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct FolderAssociation {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub names: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<String>,
     #[serde(default, rename = "command")]
     pub commands: Vec<CommandEntry>,
@@ -93,23 +93,23 @@ pub struct FolderAssociation {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MatchRule {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extensions: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub names: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub name_patterns: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dirs: Option<bool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub empty: Option<bool>,
     /// MIME globs such as `text/*` or `image/png`, detected from the file's bytes and
     /// name in yazi's vocabulary: directories are `inode/directory`, empty files
     /// `inode/empty`, URLs `x-scheme-handler/<scheme>`.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mime: Vec<String>,
     /// Interpreter names from a `#!` line, as globs: `python*`, `bash`, `node`.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shebang: Vec<String>,
 }
 
@@ -205,7 +205,7 @@ pub fn default_config_path() -> Result<PathBuf> {
 pub fn load_config(path: &Path) -> Result<Config> {
     if !path.exists() {
         bail!(
-            "no config found at {}\ncreate one with: smartopen --init-config",
+            "no config found at {}\ncreate one with: smartopen wizard   (or: smartopen config init)",
             path.display()
         );
     }
