@@ -124,6 +124,18 @@ on seven runners, and only then flips the draft — to `latest`, or to prereleas
 `-rc` tag, which never becomes `latest`. `cargo publish` runs last and needs the
 `CARGO_REGISTRY_TOKEN` secret.
 
+Three things the workflow cannot check for you. **The repository must be public before a
+tag is pushed**: build attestations are not available on a user-owned private repository,
+so the `checksums` job fails and the release stays a draft. **Pages must already serve
+`docs/install.sh`** — `public-path` checks it only for the final tag, after the release is
+`latest`; `pages.yml` deploys on a push to `main` touching `docs/**` (or `gh workflow run
+pages.yml`), and `curl -sI https://lariocpt.github.io/smartopen/install.sh` must say 200
+first. **Never `workflow_dispatch` a tag whose release is published**: the release action
+deletes the release, every archive is rebuilt with new checksums, and the formula, the
+PKGBUILD and the mirror's byte-identity assertion all break. A job that failed in a
+finished run (a missing `CARGO_REGISTRY_TOKEN`, say) is re-run alone with
+`gh run rerun <run-id> --failed`.
+
 Two planes, one source of truth: the GitHub Release is the bytes. The LAN Jenkins job
 **mirrors** it (download, verify `SHA256SUMS`, `gh attestation verify`, smoke, republish
 unchanged, assert byte identity) — it never builds. Consumers on the estate install from

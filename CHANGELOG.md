@@ -64,6 +64,16 @@ file manager, a shell keybinding, or the command line with one config.
   design; a command that names only it now says on stderr how many targets it dropped,
   and the starter configs and the wizard's catalogue use `{paths}` wherever the tool
   takes several files.
+- **The wizard's config answers a URL, a script and any text file.** `config init` did;
+  the wizard's did not — a URL, an extensionless script or an empty file got "no
+  matching commands". Every wizard config now carries the same baseline: `[[url]]` for
+  http/https, a shebang rule (Run, with confirm, and Edit), and `text/*` and empty-file
+  rules, after whatever categories were ticked.
+- `config doctor` no longer reports `ok` for a catalogue tool hidden behind
+  `sh -c 'cd … && tool'`: the catalogue spells "in this folder" as `cwd`, so doctor
+  checks the tool itself.
+- `install.sh --help` printed nothing when piped through `sh` (it read `$0`); it prints
+  its usage.
 - **`yazi apply` moved untouched tables.** The rewritten `[opener]`/`[open]` went to the
   end of the file, so a `[preview]` that followed them showed up in `diff` as moved. They
   go back where they were.

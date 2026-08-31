@@ -119,6 +119,11 @@ pub struct Choice {
     pub icon: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub detach: bool,
+    /// Working directory, with placeholders (`{path}`, `{dir}`); the way to run a tool
+    /// "in this folder". Not `sh -c 'cd … && tool'`: `config doctor` would then check
+    /// `sh` and report the missing tool as fine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform: Option<Platform>,
 }
@@ -252,30 +257,56 @@ mod tests {
         let known = crate::runner::PLACEHOLDERS;
         for category in &catalog.categories {
             for choice in &category.choices {
-                // `${EDITOR:-micro}` is a shell expansion, not a placeholder: skip a brace
-                // that follows `$`.
-                let run = choice.run.as_str();
-                let bytes = run.as_bytes();
-                let mut from = 0;
-                while let Some(offset) = run[from..].find('{') {
-                    let start = from + offset;
-                    if start > 0 && bytes[start - 1] == b'$' {
-                        from = start + 1;
-                        continue;
+                for text in std::iter::once(choice.run.as_str()).chain(choice.cwd.as_deref()) {
+                    // `${EDITOR:-micro}` is a shell expansion, not a placeholder: skip a
+                    // brace that follows `$`.
+                    let bytes = text.as_bytes();
+                    let mut from = 0;
+                    while let Some(offset) = text[from..].find('{') {
+                        let start = from + offset;
+                        if start > 0 && bytes[start - 1] == b'$' {
+                            from = start + 1;
+                            continue;
+                        }
+                        let Some(len) = text[start..].find('}') else {
+                            break;
+                        };
+                        let token = &text[start..=start + len];
+                        assert!(
+                            known.contains(&token),
+                            "{}: unknown placeholder {token} in {text}",
+                            category.id
+                        );
+                        from = start + len + 1;
                     }
-                    let Some(len) = run[start..].find('}') else {
-                        break;
-                    };
-                    let token = &run[start..=start + len];
-                    assert!(
-                        known.contains(&token),
-                        "{}: unknown placeholder {token} in {}",
-                        category.id,
-                        choice.run
-                    );
-                    from = start + len + 1;
                 }
             }
         }
+    }
+
+    #[test]
+    fn no_choice_hides_its_tool_behind_sh_c() {
+        // `sh -c 'cd "$1" && gitui' _ {path}` made doctor check `sh`; the review saw
+        // `Open lazydocker` reported ok on a machine without lazydocker. `cwd` is the
+        // spelling for "in this folder".
+        let catalog = Catalog::builtin().unwrap();
+        for category in &catalog.categories {
+            for choice in &category.choices {
+                assert!(
+                    !choice.run.starts_with("sh -c"),
+                    "{}: {} runs through sh; use cwd",
+                    category.id,
+                    choice.label
+                );
+            }
+        }
+        let folders = catalog
+            .categories
+            .iter()
+            .find(|c| c.id == "directories")
+            .unwrap();
+        let gitui = folders.choices.iter().find(|c| c.tool == "gitui").unwrap();
+        assert_eq!(gitui.run, "gitui");
+        assert_eq!(gitui.cwd.as_deref(), Some("{path}"));
     }
 }

@@ -163,6 +163,10 @@ jobs:
           sh -n docs/install.sh
           dash -n docs/install.sh
           shellcheck -s sh docs/install.sh
+          # The option list is written twice — the header comment and the --help heredoc —
+          # and nothing else keeps them from drifting.
+          diff <(sed -n '/^# Options (env var/,/^#   --help/p' docs/install.sh | sed 's/^# \{0,1\}//') \
+               <(sed -n '/^Options (env var/,/^  --help/p' docs/install.sh)
           sh -n test/containers/smoke.sh
           dash -n test/containers/smoke.sh
           shellcheck -s sh test/containers/smoke.sh

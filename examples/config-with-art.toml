@@ -1,4 +1,4 @@
-# opn example config with a custom menu banner
+# smartopen example config with a custom menu banner
 
 [menu]
 art_file = "art/terminal.txt"

@@ -1,7 +1,7 @@
 # smartopen example config — macOS
 #
 # Terminal-first associations, with Finder and the default app one keystroke away. This
-# is the config `smartopen --init-config` writes on macOS; the Linux and Windows ones live
+# is the config `smartopen config init` writes on macOS; the Linux and Windows ones live
 # beside it. Commands run through `sh -c`, so `${EDITOR:-micro}` works as it would in a
 # terminal. A `platform = "macos"` marker is not needed here because the whole file is
 # macOS-specific; use it when one config is shared across machines.

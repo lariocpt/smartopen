@@ -29,14 +29,16 @@ $ smartopen notes.md
 │> 1  [md]   Render Markdown│ │ Rendered view in glow                  │
 │  2  [edit] Edit           │ │                                        │
 │  3  [finder] Reveal       │ │ Command                                │
-│                           │ │ glow -p '/home/u/docs/notes.md'        │
+│                           │ │ glow -p /home/u/docs/notes.md          │
 │                           │ │                                        │
 │                           │ │ Executable                             │
 │                           │ │ glow: found at /usr/bin/glow           │
 │                           │ │                                        │
 │                           │ │ Target                                 │
 │                           │ │ /home/u/docs/notes.md                  │
-│                           │ │ type: file · mime: text/markdown       │
+│                           │ │ type: file                             │
+│                           │ │ extension: md                          │
+│                           │ │ mime: text/markdown                    │
 └───────────────────────────┘ └────────────────────────────────────────┘
  type to filter · ↑↓ move · 1-9 pick · Alt+key · Enter run · Esc cancel
 ```
@@ -57,7 +59,7 @@ in one menu, and the same file drives every way you reach it:
 | **broot** | `smartopen broot apply` binds Enter on files to the same menu (broot has no per-type opener of its own) |
 | **your shell** | `smartopen shell zsh` binds `Ctrl-G`: pick a shortcut, it lands on the prompt line, unexecuted |
 | **a keybinding** | `smartopen` with no arguments is a shortcut launcher |
-| **a script** | `smartopen --command "Render Markdown" file.md`, `--dry-run`, `--print`, `--json` |
+| **a script** | `smartopen --command "Render Markdown" file.md`, `--dry-run`, `--print`, `config doctor --json` |
 
 | | `smartopen` | `xdg-open` / `open` | `handlr` | `rifle` (ranger) | `openwith-fzf` |
 |---|---|---|---|---|---|
@@ -124,7 +126,9 @@ they are missing — then walks popular file types one checklist at a time, with
 terminal tools that open them: ✓ installed, ↓ would be installed, ✗ not installable here.
 Before anything is written or run it shows the exact TOML and the exact package-manager
 commands; installs default to **no**. It is also offered automatically the first time you
-run `smartopen` without a config.
+run `smartopen` without a config. Whatever you tick, the config it writes also answers a
+URL (`[[url]]`), a script by its shebang, any other text file and an empty one — the same
+baseline `config init` gives.
 
 ```sh
 smartopen wizard --dry-run      # just the review

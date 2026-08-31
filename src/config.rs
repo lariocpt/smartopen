@@ -187,7 +187,7 @@ pub const SAMPLE_CONFIG_MACOS: &str = include_str!("../examples/config-macos.tom
 pub const SAMPLE_CONFIG_WINDOWS: &str = include_str!("../examples/config-windows.toml");
 
 /// The starter config for the OS this binary was built for. Each one names tools that
-/// exist there, so a fresh `--init-config` followed by `--doctor` is not a wall of red.
+/// exist there, so a fresh `config init` followed by `config doctor` is not a wall of red.
 pub const SAMPLE_CONFIG: &str = if cfg!(windows) {
     SAMPLE_CONFIG_WINDOWS
 } else if cfg!(target_os = "macos") {

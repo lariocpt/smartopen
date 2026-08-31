@@ -599,7 +599,7 @@ fn discover_project(no_project: bool, target_dirs: &[PathBuf]) -> Option<PathBuf
 
 /// The user config with any project config layered over it. A project config alone is
 /// enough to run — a repo that ships `.smartopen.toml` should work on a machine that
-/// never ran `--init-config`.
+/// never ran `config init`.
 fn load_effective_config(config_path: &Path, project_path: Option<&Path>) -> Result<Config> {
     let base = match project_path {
         Some(_) if !config_path.exists() => Config::default(),

@@ -37,7 +37,26 @@ so_warn() { printf 'smartopen: %s\n' "$*" >&2; }
 so_die()  { so_warn "$*"; exit 1; }
 so_have() { command -v "$1" >/dev/null 2>&1; }
 
-so_usage() { sed -n '2,31p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'; }
+# A heredoc, not `sed … "$0"`: piped through `sh`, $0 is the shell, not this file, and
+# `--help` printed nothing.
+so_usage() {
+    cat <<'EOF'
+install.sh — the public installer for smartopen.
+
+    curl -fsSL https://lariocpt.github.io/smartopen/install.sh | sh
+
+Options (env var in brackets):
+  vX.Y.Z, --version=vX.Y.Z   install a specific release          [SMARTOPEN_VERSION]
+  --prefix=DIR               install root, default ~/.local      [SMARTOPEN_PREFIX]
+  --target=TRIPLE            override the detected Rust target   [SMARTOPEN_TARGET]
+  --source=github|apps       where to resolve from               [SMARTOPEN_SOURCE]
+  --download-only=DIR        fetch and verify into DIR, install nothing
+  --help
+
+Also honoured: SMARTOPEN_REPO (owner/repo), SMARTOPEN_DOWNLOAD_BASE (a URL or file://
+directory holding the archives and SHA256SUMS), APPS_URL (the LAN mirror).
+EOF
+}
 
 # The scheme allowlist is narrowed to https for the published path and widened only
 # when the caller has already opted out of it by setting a non-https base themselves —
@@ -89,7 +108,7 @@ so_detect_target() {
         Linux)  printf '%s-unknown-linux-musl' "$arch" ;;
         Darwin) printf '%s-apple-darwin' "$arch" ;;
         MINGW*|MSYS*|CYGWIN*|Windows_NT)
-            so_die 'on Windows use: cargo install smartopen, scoop, or the .zip from the Releases page' ;;
+            so_die 'on Windows use: cargo install smartopen, or the .zip from the Releases page' ;;
         *) so_die "no prebuilt binary for $os; try: cargo install smartopen" ;;
     esac
 }
