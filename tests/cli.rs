@@ -537,3 +537,58 @@ fn tools_list_runs_and_names_the_navigators() {
         .success()
         .stdout(predicate::str::contains("yazi").and(predicate::str::contains("broot")));
 }
+
+#[test]
+fn the_readme_deploy_example_runs_a_parameter_named_like_a_placeholder() {
+    // `{{host}}` contains `{host}`; the renderer must read it as the parameter.
+    let sandbox = Sandbox::new();
+    sandbox.write_config(
+        "[[shortcut]]\nlabel = \"Deploy\"\nrun = \"ssh {{host}} 'systemctl restart app'\"\n[shortcut.param.host]\ndefault = \"web-1\"\n",
+    );
+    // `web-1` needs no quoting on either shell; the rest is the template verbatim.
+    let want = "ssh web-1 'systemctl restart app'\n";
+    sandbox
+        .smartopen()
+        .args([
+            "--command",
+            "Deploy",
+            "--param",
+            "host=web-1",
+            "--print",
+            "--no-history",
+        ])
+        .assert()
+        .success()
+        .stdout(want);
+}
+
+#[test]
+fn a_file_named_like_a_placeholder_is_quoted_once() {
+    let sandbox = Sandbox::new();
+    sandbox.write_config(&csv_config("echo {path}"));
+    let dir = sandbox.path().join("{dir}");
+    fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("it {name}.csv");
+    fs::write(&file, "a\n").unwrap();
+
+    let out = sandbox
+        .smartopen()
+        .arg("--dry-run")
+        .arg(&file)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let printed = String::from_utf8(out).unwrap();
+    // One quoted value, braces intact, nothing substituted inside it.
+    let quote = if cfg!(windows) { '"' } else { '\'' };
+    assert!(
+        printed.contains(&format!(
+            "{{dir}}{}it {{name}}.csv{quote}",
+            std::path::MAIN_SEPARATOR
+        )),
+        "{printed}"
+    );
+    assert_eq!(printed.matches(quote).count(), 2, "{printed}");
+}

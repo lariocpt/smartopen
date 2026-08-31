@@ -28,6 +28,15 @@ pub struct Param {
     pub choices: Option<String>,
 }
 
+/// What may sit between the braces of `{{name}}`. The renderer in `runner.rs` uses the
+/// same rule, so a `{{ }}` or `{{a b}}` is literal text to both.
+pub fn is_name(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
 /// The `{{name}}` parameters a command line mentions, in first-appearance order.
 pub fn names(run: &str) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
@@ -36,31 +45,12 @@ pub fn names(run: &str) -> Vec<String> {
         let after = &rest[start + 2..];
         let Some(end) = after.find("}}") else { break };
         let name = after[..end].trim();
-        if !name.is_empty()
-            && name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-            && !names.iter().any(|n| n == name)
-        {
+        if is_name(name) && !names.iter().any(|n| n == name) {
             names.push(name.to_string());
         }
         rest = &after[end + 2..];
     }
     names
-}
-
-/// Replace every `{{name}}` with its quoted value. Unresolved names are an error rather
-/// than an empty string that runs anyway.
-pub fn substitute(run: &str, values: &BTreeMap<String, String>, shell: Shell) -> Result<String> {
-    let mut out = run.to_string();
-    for name in names(run) {
-        let value = values
-            .get(&name)
-            .with_context(|| format!("parameter {{{{{name}}}}} has no value"))?;
-        let quoted = shell.quote(value)?;
-        out = out.replace(&format!("{{{{{name}}}}}"), &quoted);
-    }
-    Ok(out)
 }
 
 /// How a value is asked for: injected so tests never touch a terminal.
@@ -223,19 +213,6 @@ mod tests {
             names("{{bad name}}").is_empty(),
             "spaces inside a name are not a name"
         );
-    }
-
-    #[test]
-    fn substitute_quotes_and_refuses_missing_values() {
-        let values: BTreeMap<String, String> = [("msg", "fix: it's done")]
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect();
-        assert_eq!(
-            substitute("git commit -m {{msg}}", &values, Shell::Posix).unwrap(),
-            "git commit -m 'fix: it'\\''s done'"
-        );
-        assert!(substitute("echo {{nope}}", &values, Shell::Posix).is_err());
     }
 
     struct Scripted(Vec<Option<String>>);

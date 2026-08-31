@@ -20,14 +20,19 @@ pub enum Shell {
     Cmd,
 }
 
+/// Why a value cannot be quoted. Every case is cmd.exe: POSIX `'…'` can hold anything.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum QuoteError {
     #[error(
         "cannot pass {0:?} through cmd.exe: a `%` is expanded as a variable even inside quotes, and cmd has no way to escape it"
     )]
-    PercentInCmd(String),
+    Percent(String),
     #[error("cannot pass {0:?} through cmd.exe: cmd command lines cannot contain a newline")]
-    NewlineInCmd(String),
+    Newline(String),
+    #[error(
+        "cannot pass {0:?} through cmd.exe: a backslash right before a quote has no single reading in cmd"
+    )]
+    BackslashQuote(String),
 }
 
 impl Shell {
@@ -50,17 +55,23 @@ impl Shell {
             }
             Shell::Cmd => {
                 let mut shell = Command::new("cmd");
-                shell.arg("/C");
-                // Rust re-quotes every argument for CreateProcess, but `line` is already a
+                // `/S /C "…"`: cmd strips exactly the one pair of quotes added here and
+                // nothing else. Without `/S`, a line holding more than two `"` loses its
+                // first and last — `"C:\Program Files\x.exe" "a b"` reached the program as
+                // `C:\Program Files\x.exe" "a b`. yazi wraps its own command lines the
+                // same way.
+                shell.arg("/S").arg("/C");
+                let wrapped = format!("\"{line}\"");
+                // Rust re-quotes every argument for CreateProcess, but this is already a
                 // complete cmd command line and has to reach cmd byte for byte.
                 #[cfg(windows)]
                 {
                     use std::os::windows::process::CommandExt;
-                    shell.raw_arg(line);
+                    shell.raw_arg(wrapped);
                 }
                 #[cfg(not(windows))]
                 {
-                    shell.arg(line);
+                    shell.arg(wrapped);
                 }
                 shell
             }
@@ -93,10 +104,15 @@ fn quote_posix(value: &str) -> String {
 
 fn quote_cmd(value: &str) -> Result<String, QuoteError> {
     if value.contains('%') {
-        return Err(QuoteError::PercentInCmd(value.to_string()));
+        return Err(QuoteError::Percent(value.to_string()));
     }
     if value.contains(['\n', '\r']) {
-        return Err(QuoteError::NewlineInCmd(value.to_string()));
+        return Err(QuoteError::Newline(value.to_string()));
+    }
+    // A `"` cannot occur in a Windows path, so this only ever comes from a typed parameter;
+    // which of the C runtime's `\"` rules the child applies is not ours to know.
+    if value.contains("\\\"") {
+        return Err(QuoteError::BackslashQuote(value.to_string()));
     }
 
     if !value.is_empty()
@@ -110,7 +126,16 @@ fn quote_cmd(value: &str) -> Result<String, QuoteError> {
     // `"` is cmd's only quoting. A quote inside is doubled: cmd's own quote tracking flips
     // twice and stays consistent, and the C runtime that parses the child's arguments
     // reads `""` inside a quoted argument as one literal `"`.
-    Ok(format!("\"{}\"", value.replace('"', "\"\"")))
+    //
+    // The runtime also reads 2n backslashes before a `"` as n backslashes plus a
+    // delimiter, so a value ending in `\` — `C:\my dir\` — would turn the closing quote
+    // into a literal and swallow the rest of the line. Double the trailing run.
+    let trailing = value.len() - value.trim_end_matches('\\').len();
+    Ok(format!(
+        "\"{}{}\"",
+        value.replace('"', "\"\""),
+        "\\".repeat(trailing)
+    ))
 }
 
 #[cfg(test)]
@@ -148,14 +173,29 @@ mod tests {
     }
 
     #[test]
+    fn cmd_doubles_a_trailing_backslash_so_the_closing_quote_survives() {
+        assert_eq!(Shell::Cmd.quote(r"C:\my dir\").unwrap(), r#""C:\my dir\\""#);
+        assert_eq!(
+            Shell::Cmd.quote(r"C:\my dir\\").unwrap(),
+            r#""C:\my dir\\\\""#
+        );
+        // Bare values need no quotes, so a trailing backslash there is left alone.
+        assert_eq!(Shell::Cmd.quote(r"C:\dir\").unwrap(), r"C:\dir\");
+        assert_eq!(
+            Shell::Cmd.quote(r#"say \"hi"#),
+            Err(QuoteError::BackslashQuote(r#"say \"hi"#.to_string()))
+        );
+    }
+
+    #[test]
     fn cmd_refuses_what_it_cannot_escape() {
         assert_eq!(
             Shell::Cmd.quote("100%"),
-            Err(QuoteError::PercentInCmd("100%".to_string()))
+            Err(QuoteError::Percent("100%".to_string()))
         );
         assert_eq!(
             Shell::Cmd.quote("two\nlines"),
-            Err(QuoteError::NewlineInCmd("two\nlines".to_string()))
+            Err(QuoteError::Newline("two\nlines".to_string()))
         );
     }
 

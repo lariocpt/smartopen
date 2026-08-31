@@ -64,14 +64,20 @@ fn smartopen_spec(bin: &str) -> Spec {
             desc: Some("smartopen".to_string()),
             block: true,
             orphan: false,
-            for_platform: Some("unix".to_string()),
+            for_platform: None,
         }],
     };
     let rules = vec![
         OpenRule {
             matcher: Matcher::Mime("inode/directory".to_string()),
-            use_openers: vec!["gitui".to_string(), "lazyenv".to_string()],
-            doc: Some("directories open in gitui or lazyenv".to_string()),
+            use_openers: vec![
+                "gitui".to_string(),
+                "lazyenv".to_string(),
+                "smartopen".to_string(),
+            ],
+            doc: Some(
+                "directories open in gitui or lazyenv, or the menu where those are not".to_string(),
+            ),
         },
         OpenRule {
             matcher: Matcher::Mime("video/*".to_string()),
@@ -112,6 +118,32 @@ mod tests {
         assert_eq!(s.prepend_rules.len(), 4);
         assert!(s.openers.iter().any(|o| o.name == "smartopen"));
         s.validate().expect("smartopen spec must validate");
+    }
+
+    #[test]
+    fn every_smartopen_rule_has_an_opener_for_each_platform() {
+        // yazi drops an opener whose `for` does not match the OS, and a rule left with
+        // none is dead there: `yazi apply` on Windows used to produce exactly that. The
+        // delegate is this cross-platform binary, so it carries no `for` at all.
+        let s = effective(&Spec::builtin(), Engine::Smartopen, "smartopen");
+        for platform in ["linux", "macos", "windows"] {
+            for rule in &s.prepend_rules {
+                let runnable = rule.use_openers.iter().any(|name| {
+                    s.openers.iter().find(|o| &o.name == name).is_some_and(|o| {
+                        o.runs.iter().any(|r| match r.for_platform.as_deref() {
+                            None => true,
+                            Some("unix") => platform != "windows",
+                            Some(p) => p == platform,
+                        })
+                    })
+                });
+                assert!(
+                    runnable,
+                    "{platform}: rule {:?} has no runnable opener",
+                    rule.matcher
+                );
+            }
+        }
     }
 
     #[test]

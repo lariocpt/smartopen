@@ -1,7 +1,6 @@
 //! Which commands a config offers for a target — or for several targets at once.
 
 use std::collections::HashSet;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -190,7 +189,9 @@ fn matches_folder_association(
 
     for path in &association.paths {
         let path = resolve_config_relative_path(config_path, path)?;
-        let path = fs::canonicalize(&path).unwrap_or(path);
+        // The same canonicaliser as Target::from_path: std's yields `\\?\C:\…` on
+        // Windows and the comparison below would never be equal.
+        let path = crate::target::canonicalize(&path).unwrap_or(path);
         if path == target.path {
             return Ok(true);
         }

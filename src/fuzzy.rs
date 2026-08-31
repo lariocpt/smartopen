@@ -27,9 +27,9 @@ const SCORE_MIN: f64 = f64::NEG_INFINITY;
 /// Match `query` against `haystack`, case-insensitively. `None` when it is not a
 /// subsequence. An empty query matches everything with a score of zero.
 pub fn score(query: &str, haystack: &str) -> Option<Match> {
-    let needle: Vec<char> = query.chars().flat_map(char::to_lowercase).collect();
+    let needle: Vec<char> = query.chars().map(lower_one).collect();
     let hay_original: Vec<char> = haystack.chars().collect();
-    let hay: Vec<char> = hay_original.iter().flat_map(|c| c.to_lowercase()).collect();
+    let hay: Vec<char> = hay_original.iter().map(|&c| lower_one(c)).collect();
 
     if needle.is_empty() {
         return Some(Match {
@@ -98,6 +98,14 @@ pub fn score(query: &str, haystack: &str) -> Option<Match> {
         score: best[n - 1][m - 1],
         indices,
     })
+}
+
+/// One lowercase char per input char, so an index into the lowered text is an index into
+/// the original. `char::to_lowercase` can yield two chars (`İ` → `i` + a combining dot),
+/// and a match landing past the original length indexed `bonus` out of bounds — a review
+/// found it. Dropping the combining mark is the fuzzy behaviour wanted anyway.
+fn lower_one(c: char) -> char {
+    c.to_lowercase().next().unwrap_or(c)
 }
 
 fn is_subsequence(needle: &[char], hay: &[char]) -> bool {
@@ -173,6 +181,15 @@ mod tests {
     fn indices_are_char_positions_not_bytes() {
         let m = score("x", "ééx").unwrap();
         assert_eq!(m.indices, vec![2]);
+    }
+
+    #[test]
+    fn lowercasing_never_changes_the_length() {
+        // `İ` lowercases to two chars; nine of them pushed the match for `l` past the
+        // original length and out of the bonus table.
+        let m = score("l", "İİİİİİİİİl").expect("still a subsequence");
+        assert_eq!(m.indices, vec![9]);
+        assert!(score("i", "İstanbul").is_some());
     }
 
     #[test]

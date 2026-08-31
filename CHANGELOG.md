@@ -130,7 +130,9 @@ file manager, a shell keybinding, or the command line with one config.
 - **broot integration is back.** `smartopen broot apply` writes an Enter verb (also
   invocable as `:smartopen`) to `smartopen.hjson` and imports it from `conf.hjson`,
   replacing a `yazi-opener-config` import if one is there. `--setup-broot` had been
-  removed; `niricritty`'s bake called it anyway and failed silently. It works again.
+  removed; `niricritty`'s bake called it anyway and failed silently. It works again —
+  on Unix and macOS; broot on Windows runs verbs without a shell, so `broot apply`
+  refuses there and the wizard does not offer it.
 - **The navigator config delegates to the binary that wrote it.** `opn yazi apply` produces
   a `yazi.toml` that calls `opn`; `--bin` overrides. `--rules` writes explicit per-type
   viewers from the built-in spec instead, `--spec` swaps in your own, and `--target`

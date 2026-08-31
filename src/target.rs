@@ -226,7 +226,7 @@ impl Target {
 /// Resolve to an absolute path with symlinks followed — the form every placeholder uses.
 /// On Windows `std::fs::canonicalize` returns `\\?\C:\…`, which most programs reject on
 /// their command line; `dunce` gives back the plain `C:\…` spelling wherever it is valid.
-fn canonicalize(path: &Path) -> std::io::Result<PathBuf> {
+pub(crate) fn canonicalize(path: &Path) -> std::io::Result<PathBuf> {
     #[cfg(windows)]
     {
         dunce::canonicalize(path)

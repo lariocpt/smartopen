@@ -45,7 +45,7 @@ use crate::matcher::{default_command, matching_commands, shortcuts_here};
 use crate::menu::select_command;
 use crate::navigators::{Action as NavAction, Navigator};
 use crate::params::TerminalPrompter;
-use crate::runner::{plan_command, run_command};
+use crate::runner::{plan_command_with, plan_cwd, run_command};
 use crate::shell::Shell;
 use crate::shell_widget::ShellKind;
 use crate::target::{Target, targets_from_args};
@@ -788,7 +788,7 @@ fn edit_config(path: &Path) -> Result<i32> {
         ..CommandEntry::default()
     };
 
-    run_command(&command, &[])
+    run_command(&command, &[], None)
 }
 
 fn menu_art_for_selection(
@@ -851,13 +851,13 @@ fn execute(
     history: &mut History,
     cancelled: i32,
 ) -> Result<i32> {
-    let mut command = command.clone();
-
-    // Parameters first, so the plan below sees the final command line. The choices
-    // command runs in the shortcut's cwd, like the shortcut itself will.
-    let names = params::names(&command.run);
-    if !names.is_empty() {
-        let cwd = plan_command(&command, targets)?.cwd;
+    // Parameters are ASKED for here; the renderer substitutes them and the target
+    // placeholders together in one pass. The choices command runs in the shortcut's cwd,
+    // like the shortcut itself will.
+    let values = if params::names(&command.run).is_empty() {
+        None
+    } else {
+        let cwd = plan_cwd(command, targets, None)?;
         let label = command.label.clone();
         let last = |name: &str| history.last_param(&label, name);
         let Some(values) = params::resolve(
@@ -872,13 +872,19 @@ fn execute(
         else {
             return Ok(cancelled);
         };
-        command.run = params::substitute(&command.run, &values, Shell::current())?;
-        if opts.mode != Mode::DryRun {
-            history.record_params(&command.label, &values);
-        }
-    }
+        Some(values)
+    };
 
-    let plan = plan_command(&command, targets)?;
+    let plan = plan_command_with(command, targets, values.as_ref())?;
+    // Answers are remembered only once the command is really going to run — after the
+    // confirm gate, never on --dry-run — or a declined `confirm` would still become the
+    // "last" value next time.
+    let remember = |history: &mut History| {
+        history.record(&command.label);
+        if let Some(values) = &values {
+            history.record_params(&command.label, values);
+        }
+    };
 
     match opts.mode {
         Mode::Print => {
@@ -893,7 +899,7 @@ fn execute(
                 }
                 _ => println!("{}", plan.command),
             }
-            history.record(&command.label);
+            remember(history);
             Ok(0)
         }
         Mode::DryRun => {
@@ -911,8 +917,8 @@ fn execute(
                 return Ok(cancelled);
             }
             // Recorded before running, so a long-lived command still counts as picked.
-            history.record(&command.label);
-            run_command(&command, targets)
+            remember(history);
+            run_command(command, targets, values.as_ref())
         }
     }
 }
