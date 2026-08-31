@@ -81,10 +81,10 @@ fn quote_posix(value: &str) -> String {
         return "''".to_string();
     }
 
-    if value
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'_' | b'-'))
-    {
+    if value.bytes().all(|byte| {
+        byte.is_ascii_alphanumeric()
+            || matches!(byte, b'/' | b'.' | b'_' | b'-' | b':' | b'@' | b'+' | b',')
+    }) {
         return value.to_string();
     }
 

@@ -18,8 +18,8 @@ use ratatui::{
 use crate::config::CommandEntry;
 use crate::fuzzy;
 use crate::history::History;
-use crate::matcher::Target;
 use crate::runner::{command_availability, plan_command};
+use crate::target::{Target, TargetKind};
 
 /// Rows a PageUp/PageDown moves by.
 const PAGE: usize = 10;
@@ -28,7 +28,7 @@ pub fn select_command(
     prompt: &str,
     commands: &[CommandEntry],
     art: &str,
-    target: Option<&Target>,
+    targets: &[Target],
     history: &History,
 ) -> Result<Option<CommandEntry>> {
     if commands.is_empty() {
@@ -36,7 +36,7 @@ pub fn select_command(
     }
 
     let mut terminal = TerminalSession::new()?;
-    let mut picker = Picker::new(prompt, commands, art, target, history);
+    let mut picker = Picker::new(prompt, commands, art, targets, history);
     picker.run(&mut terminal.terminal)
 }
 
@@ -75,7 +75,7 @@ struct Picker<'a> {
     prompt: &'a str,
     commands: &'a [CommandEntry],
     art: &'a str,
-    target: Option<&'a Target>,
+    targets: &'a [Target],
     history: &'a History,
     query: String,
     rows: Vec<Row>,
@@ -93,14 +93,14 @@ impl<'a> Picker<'a> {
         prompt: &'a str,
         commands: &'a [CommandEntry],
         art: &'a str,
-        target: Option<&'a Target>,
+        targets: &'a [Target],
         history: &'a History,
     ) -> Self {
         let mut picker = Self {
             prompt,
             commands,
             art,
-            target,
+            targets,
             history,
             query: String::new(),
             rows: Vec::new(),
@@ -384,7 +384,7 @@ impl<'a> Picker<'a> {
         }
 
         lines.push(String::new());
-        match plan_command(command, self.target) {
+        match plan_command(command, self.targets) {
             Ok(plan) => {
                 lines.push("Command".to_string());
                 lines.push(plan.command.clone());
@@ -403,16 +403,29 @@ impl<'a> Picker<'a> {
             }
         }
 
-        if let Some(target) = self.target {
+        if let Some(target) = self.targets.first() {
             lines.push(String::new());
             lines.push("Target".to_string());
             lines.push(target.path.display().to_string());
+            if self.targets.len() > 1 {
+                lines.push(format!("+ {} more", self.targets.len() - 1));
+            }
             lines.push(format!(
                 "type: {}",
-                if target.is_dir { "folder" } else { "file" }
+                match target.kind {
+                    TargetKind::File => "file",
+                    TargetKind::Dir => "folder",
+                    TargetKind::Url => "url",
+                }
             ));
             if !target.ext.is_empty() {
                 lines.push(format!("extension: {}", target.ext));
+            }
+            if !target.is_url() {
+                lines.push(format!("mime: {}", target.mime));
+            }
+            if let Some(shebang) = &target.shebang {
+                lines.push(format!("shebang: {shebang}"));
             }
         } else {
             lines.push(String::new());
@@ -507,7 +520,7 @@ mod tests {
     }
 
     fn picker<'a>(commands: &'a [CommandEntry], history: &'a History) -> Picker<'a> {
-        Picker::new("Pick", commands, "", None, history)
+        Picker::new("Pick", commands, "", &[], history)
     }
 
     fn labels(picker: &Picker<'_>) -> Vec<String> {

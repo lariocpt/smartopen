@@ -11,7 +11,7 @@ use crate::platform::Platform;
 // Every table is `deny_unknown_fields`: a misspelt key (`extension = ` for
 // `extensions = `) is an error at load time, not a rule that silently never matches.
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(default)]
@@ -21,9 +21,25 @@ pub struct Config {
     #[serde(default)]
     pub folder: Vec<FolderAssociation>,
     #[serde(default)]
+    pub url: Vec<UrlAssociation>,
+    #[serde(default)]
     pub association: Vec<Association>,
     #[serde(default)]
     pub shortcut: Vec<CommandEntry>,
+}
+
+/// `[[url]]`: commands for URL targets, chosen by scheme and host.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct UrlAssociation {
+    /// `https`, `mailto`, … ; empty means any scheme.
+    #[serde(default)]
+    pub schemes: Vec<String>,
+    /// Host globs such as `github.com` or `*.example.com`; empty means any host.
+    #[serde(default)]
+    pub hosts: Vec<String>,
+    #[serde(default, rename = "command")]
+    pub commands: Vec<CommandEntry>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -76,6 +92,14 @@ pub struct MatchRule {
     pub dirs: Option<bool>,
     #[serde(default)]
     pub empty: Option<bool>,
+    /// MIME globs such as `text/*` or `image/png`, detected from the file's bytes and
+    /// name in yazi's vocabulary: directories are `inode/directory`, empty files
+    /// `inode/empty`, URLs `x-scheme-handler/<scheme>`.
+    #[serde(default)]
+    pub mime: Vec<String>,
+    /// Interpreter names from a `#!` line, as globs: `python*`, `bash`, `node`.
+    #[serde(default)]
+    pub shebang: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -101,6 +125,13 @@ pub struct CommandEntry {
     /// filter is being typed. One character.
     #[serde(default)]
     pub key: Option<char>,
+    /// Higher sorts first in the menu; equal priorities keep config order. Default 0.
+    #[serde(default)]
+    pub priority: i32,
+    /// When exactly one offered command is `default`, it runs without a menu
+    /// (`--menu` still shows one).
+    #[serde(default)]
+    pub default: bool,
 }
 
 impl CommandEntry {
@@ -167,6 +198,55 @@ pub fn init_config(path: &Path) -> Result<()> {
         .with_context(|| format!("failed to write config at {}", path.display()))?;
 
     Ok(())
+}
+
+/// File names a project may carry at its root (or anywhere above the working directory).
+pub const PROJECT_CONFIG_NAMES: &[&str] = &[".smartopen.toml", ".opn.toml"];
+
+/// Walk up from each start directory looking for a project config. The search stops
+/// after the directory that holds `.git`, at the home directory, or at the root, so a
+/// config in `~` never leaks into every repo below it. `starts` are tried in order —
+/// the working directory first, then the target's — and the first hit wins.
+pub fn find_project_config(starts: &[PathBuf], home: Option<&Path>) -> Option<PathBuf> {
+    for start in starts {
+        let mut dir = Some(start.as_path());
+        while let Some(current) = dir {
+            for name in PROJECT_CONFIG_NAMES {
+                let candidate = current.join(name);
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+            if current.join(".git").exists() || home.is_some_and(|home| home == current) {
+                break;
+            }
+            dir = current.parent();
+        }
+    }
+    None
+}
+
+/// The user config with a project config layered over it: the project's associations
+/// and shortcuts come first, so they win the menu order and label deduplication.
+/// `[menu]` stays the user's — banners are a taste, not a project matter. Relative
+/// folder paths in the project file are anchored to that file, not the user config.
+pub fn merge_project(mut base: Config, mut project: Config, project_path: &Path) -> Config {
+    let project_dir = project_path.parent().unwrap_or_else(|| Path::new("."));
+    for association in &mut project.folder {
+        for path in &mut association.paths {
+            if !path.starts_with('~') && !Path::new(path.as_str()).is_absolute() {
+                *path = project_dir.join(path.as_str()).display().to_string();
+            }
+        }
+    }
+
+    project.extension.append(&mut base.extension);
+    project.folder.append(&mut base.folder);
+    project.url.append(&mut base.url);
+    project.association.append(&mut base.association);
+    project.shortcut.append(&mut base.shortcut);
+    project.menu = base.menu;
+    project
 }
 
 pub fn load_menu_art(config: &Config, config_path: &Path) -> Result<String> {
@@ -247,6 +327,30 @@ pub fn describe_config(config: &Config, path: &Path) -> String {
         }
     }
 
+    output.push_str("\nURL Associations:\n");
+    if config.url.is_empty() {
+        output.push_str("  (none)\n");
+    } else {
+        for (index, association) in config.url.iter().enumerate() {
+            let what = if association.schemes.is_empty() && association.hosts.is_empty() {
+                "any url".to_string()
+            } else {
+                format!(
+                    "schemes={:?} hosts={:?}",
+                    association.schemes, association.hosts
+                )
+            };
+            output.push_str(&format!("  {}. {what}\n", index + 1));
+            for command in &association.commands {
+                output.push_str(&format!(
+                    "     - {}{}\n",
+                    command.label,
+                    describe_command_details(command)
+                ));
+            }
+        }
+    }
+
     output.push_str("\nGeneric Associations:\n");
     if config.association.is_empty() {
         output.push_str("  (none)\n");
@@ -302,6 +406,12 @@ fn describe_match_rule(rule: &MatchRule) -> String {
     if let Some(empty) = rule.empty {
         parts.push(format!("empty={empty}"));
     }
+    if !rule.mime.is_empty() {
+        parts.push(format!("mime={:?}", rule.mime));
+    }
+    if !rule.shebang.is_empty() {
+        parts.push(format!("shebang={:?}", rule.shebang));
+    }
 
     if parts.is_empty() {
         "(empty)".to_string()
@@ -349,6 +459,12 @@ fn describe_command_details(command: &CommandEntry) -> String {
     }
     if let Some(key) = command.key {
         details.push(format!("key: Alt+{key}"));
+    }
+    if command.priority != 0 {
+        details.push(format!("priority: {}", command.priority));
+    }
+    if command.default {
+        details.push("default".to_string());
     }
 
     format!(" ({})", details.join("; "))
@@ -420,13 +536,7 @@ mod tests {
 
     #[test]
     fn menu_art_uses_default_when_no_file_is_configured() {
-        let config = Config {
-            menu: MenuConfig::default(),
-            extension: Vec::new(),
-            folder: Vec::new(),
-            association: Vec::new(),
-            shortcut: Vec::new(),
-        };
+        let config = Config::default();
 
         let art = load_menu_art(&config, Path::new("/tmp/opn/config.toml"))
             .expect("default art should load");
@@ -452,10 +562,7 @@ mod tests {
             menu: MenuConfig {
                 art_file: Some("art/banner.txt".to_string()),
             },
-            extension: Vec::new(),
-            folder: Vec::new(),
-            association: Vec::new(),
-            shortcut: Vec::new(),
+            ..Config::default()
         };
 
         let art =
@@ -464,5 +571,93 @@ mod tests {
         assert_eq!(art, "CUSTOM\n");
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    fn temp_root(tag: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("smartopen-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn project_config_is_found_above_cwd_but_not_past_the_git_boundary() {
+        let root = temp_root("project");
+        let repo = root.join("repo");
+        let deep = repo.join("src").join("deep");
+        fs::create_dir_all(&deep).unwrap();
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        fs::write(repo.join(".smartopen.toml"), "").unwrap();
+        // A config ABOVE the repo must not leak in.
+        fs::write(root.join(".opn.toml"), "").unwrap();
+
+        let found = find_project_config(std::slice::from_ref(&deep), None);
+        assert_eq!(found, Some(repo.join(".smartopen.toml")));
+
+        // Remove the repo's own file: the search stops at .git and finds nothing.
+        fs::remove_file(repo.join(".smartopen.toml")).unwrap();
+        assert_eq!(find_project_config(std::slice::from_ref(&deep), None), None);
+
+        // Without a .git, the walk continues up and reaches the legacy name.
+        fs::remove_dir_all(repo.join(".git")).unwrap();
+        assert_eq!(
+            find_project_config(&[deep], None),
+            Some(root.join(".opn.toml"))
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn project_search_stops_at_home() {
+        let root = temp_root("home");
+        let home = root.join("home");
+        let work = home.join("work");
+        fs::create_dir_all(&work).unwrap();
+        fs::write(root.join(".smartopen.toml"), "").unwrap();
+
+        assert_eq!(
+            find_project_config(std::slice::from_ref(&work), Some(&home)),
+            None
+        );
+        fs::write(home.join(".smartopen.toml"), "").unwrap();
+        assert_eq!(
+            find_project_config(&[work], Some(&home)),
+            Some(home.join(".smartopen.toml"))
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn project_entries_come_first_and_relative_folder_paths_anchor_to_the_project() {
+        let base: Config = toml::from_str(
+            "[[shortcut]]\nlabel = \"User\"\nrun = \"u\"\n[[folder]]\npaths = [\"a\"]\n[[folder.command]]\nlabel = \"UserFolder\"\nrun = \"x\"\n",
+        )
+        .unwrap();
+        let project: Config = toml::from_str(
+            "[[shortcut]]\nlabel = \"Project\"\nrun = \"p\"\n[[folder]]\npaths = [\"sub\", \"/abs\", \"~/x\"]\n[[folder.command]]\nlabel = \"ProjFolder\"\nrun = \"y\"\n[menu]\nart_file = \"ignored.txt\"\n",
+        )
+        .unwrap();
+
+        let merged = merge_project(base, project, Path::new("/repo/.smartopen.toml"));
+
+        let labels: Vec<_> = merged.shortcut.iter().map(|s| s.label.as_str()).collect();
+        assert_eq!(labels, ["Project", "User"]);
+        assert_eq!(merged.folder[0].paths, ["/repo/sub", "/abs", "~/x"]);
+        assert_eq!(merged.folder[1].paths, ["a"], "user paths are untouched");
+        assert_eq!(merged.menu.art_file, None, "[menu] is the user's");
+    }
+
+    #[test]
+    fn url_sections_and_new_match_keys_parse() {
+        let config: Config = toml::from_str(
+            "[[url]]\nschemes = [\"https\"]\nhosts = [\"*.github.com\"]\n[[url.command]]\nlabel = \"gh\"\nrun = \"gh browse {url}\"\n\n[[association]]\n[association.match]\nmime = [\"text/*\"]\nshebang = [\"python*\"]\n[[association.command]]\nlabel = \"py\"\nrun = \"python {path}\"\npriority = 5\ndefault = true\n",
+        )
+        .unwrap();
+        assert_eq!(config.url[0].hosts, ["*.github.com"]);
+        assert_eq!(config.association[0].match_rule.mime, ["text/*"]);
+        assert_eq!(config.association[0].commands[0].priority, 5);
+        assert!(config.association[0].commands[0].default);
     }
 }

@@ -173,6 +173,18 @@ fn command_sites(config: &Config) -> Vec<(String, &CommandEntry)> {
         sites.extend(association.commands.iter().map(|c| (context.clone(), c)));
     }
 
+    for association in &config.url {
+        let context = if association.schemes.is_empty() && association.hosts.is_empty() {
+            "url any".to_string()
+        } else {
+            format!(
+                "url schemes={:?} hosts={:?}",
+                association.schemes, association.hosts
+            )
+        };
+        sites.extend(association.commands.iter().map(|c| (context.clone(), c)));
+    }
+
     for association in &config.association {
         sites.extend(
             association
@@ -197,6 +209,7 @@ mod tests {
             menu: MenuConfig::default(),
             extension: Vec::new(),
             folder: Vec::new(),
+            url: Vec::new(),
             association: Vec::new(),
             shortcut: runs
                 .iter()

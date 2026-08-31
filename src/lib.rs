@@ -4,11 +4,13 @@ mod fuzzy;
 mod history;
 mod matcher;
 mod menu;
+mod mime;
 mod paths;
 mod platform;
 mod render;
 mod runner;
 mod shell;
+mod target;
 mod tomlio;
 
 // The yazi/broot surface. Today only `--setup-yazi` reaches it, so the diff/check/print
@@ -27,15 +29,16 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::{CommandFactory, Parser, Subcommand};
 
 use crate::config::{
-    CommandEntry, SAMPLE_CONFIG, default_config_path, describe_config, init_config, load_config,
-    load_menu_art,
+    CommandEntry, Config, SAMPLE_CONFIG, default_config_path, describe_config, find_project_config,
+    init_config, load_config, load_menu_art, merge_project,
 };
 use crate::doctor::{diagnose, render_text};
 use crate::history::History;
-use crate::matcher::{Target, matching_commands, shortcuts_here};
+use crate::matcher::{default_command, matching_commands, shortcuts_here};
 use crate::menu::select_command;
 use crate::runner::{plan_command, run_command};
 use crate::shell::Shell;
+use crate::target::{Target, targets_from_args};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -47,14 +50,32 @@ struct Cli {
     #[command(subcommand)]
     subcommand: Option<Subcommands>,
 
-    #[arg(value_name = "PATH")]
-    path: Option<PathBuf>,
+    #[arg(
+        value_name = "PATH|URL",
+        help = "Files, folders or URLs to open; several get only the commands they all share"
+    )]
+    targets: Vec<String>,
 
     #[arg(long, value_name = "PATH", help = "Use a specific config file")]
     config_path: Option<PathBuf>,
 
-    #[arg(long, help = "Print the config file path")]
+    #[arg(
+        long,
+        help = "Print the config file path (and the project config, if one applies)"
+    )]
     config: bool,
+
+    #[arg(
+        long,
+        help = "Ignore .smartopen.toml / .opn.toml files above the working directory or target"
+    )]
+    no_project: bool,
+
+    #[arg(
+        long,
+        help = "Always show the menu, even for a single match or a `default` command"
+    )]
+    menu: bool,
 
     #[arg(long, help = "Open the config in $EDITOR, creating it first if needed")]
     edit_config: bool,
@@ -136,8 +157,25 @@ pub fn run() -> Result<i32> {
 
     let config_path = selected_config_path(cli.config_path.as_deref())?;
 
+    // Targets are resolved before the config loads: a target's directory is one of the
+    // places a project config is searched for.
+    let targets = if cli.targets.is_empty() {
+        Vec::new()
+    } else {
+        targets_from_args(&cli.targets)?
+    };
+    let target_dirs: Vec<PathBuf> = targets
+        .iter()
+        .filter(|target| !target.is_url())
+        .map(|target| target.dir.clone())
+        .collect();
+    let project_path = discover_project(cli.no_project, &target_dirs);
+
     if cli.config {
         println!("{}", config_path.display());
+        if let Some(project) = &project_path {
+            println!("project: {}", project.display());
+        }
         return Ok(0);
     }
 
@@ -172,7 +210,7 @@ pub fn run() -> Result<i32> {
         return Ok(0);
     }
 
-    let config = load_config(&config_path)?;
+    let config = load_effective_config(&config_path, project_path.as_deref())?;
 
     if cli.list {
         if cli.json {
@@ -211,57 +249,95 @@ pub fn run() -> Result<i32> {
             .unwrap_or_else(History::disabled)
     };
 
-    match cli.path {
-        Some(path) => {
-            let target = Target::from_path(&path)?;
-            let commands = matching_commands(&config, &config_path, &target)?;
+    if !targets.is_empty() {
+        let commands = matching_commands(&config, &config_path, &targets)?;
 
-            if commands.is_empty() {
-                bail!("no matching commands for {}", target.path.display());
-            }
+        if commands.is_empty() {
+            let named: Vec<String> = targets
+                .iter()
+                .map(|t| t.path.display().to_string())
+                .collect();
+            bail!("no matching commands for {}", named.join(", "));
+        }
 
-            if cli.command.is_none() && commands.len() == 1 {
-                return execute_or_print(&commands[0], Some(&target), cli.dry_run, &mut history);
-            }
-
-            let menu_art = menu_art_for_selection(&config, &config_path, &cli.command)?;
-            match resolve_command(
-                "Choose a command",
-                &commands,
-                &cli.command,
-                &menu_art,
-                Some(&target),
-                &history,
-            )? {
-                Some(command) => {
-                    execute_or_print(&command, Some(&target), cli.dry_run, &mut history)
-                }
-                None => Ok(0),
+        // Skip the menu when there is nothing to choose: one match, or one command the
+        // config marked `default`. --menu and --command both mean "I want to pick".
+        if cli.command.is_none() && !cli.menu {
+            let sole = (commands.len() == 1)
+                .then(|| &commands[0])
+                .or_else(|| default_command(&commands));
+            if let Some(command) = sole {
+                return execute_or_print(command, &targets, cli.dry_run, &mut history);
             }
         }
-        None => {
-            let shortcuts = shortcuts_here(&config);
-            if shortcuts.is_empty() {
-                bail!(
-                    "no shortcuts configured for this platform in {}",
-                    config_path.display()
-                );
-            }
 
-            let menu_art = menu_art_for_selection(&config, &config_path, &cli.command)?;
-            match resolve_command(
-                "Choose a shortcut",
-                &shortcuts,
-                &cli.command,
-                &menu_art,
-                None,
-                &history,
-            )? {
-                Some(command) => execute_or_print(&command, None, cli.dry_run, &mut history),
-                None => Ok(0),
-            }
-        }
+        let menu_art = menu_art_for_selection(&config, &config_path, &cli.command)?;
+        return match resolve_command(
+            "Choose a command",
+            &commands,
+            &cli.command,
+            &menu_art,
+            &targets,
+            &history,
+        )? {
+            Some(command) => execute_or_print(&command, &targets, cli.dry_run, &mut history),
+            None => Ok(0),
+        };
     }
+
+    let shortcuts = shortcuts_here(&config);
+    if shortcuts.is_empty() {
+        bail!(
+            "no shortcuts configured for this platform in {}",
+            config_path.display()
+        );
+    }
+
+    let menu_art = menu_art_for_selection(&config, &config_path, &cli.command)?;
+    match resolve_command(
+        "Choose a shortcut",
+        &shortcuts,
+        &cli.command,
+        &menu_art,
+        &[],
+        &history,
+    )? {
+        Some(command) => execute_or_print(&command, &[], cli.dry_run, &mut history),
+        None => Ok(0),
+    }
+}
+
+/// The project config that applies: searched up from the working directory, then from
+/// each target's directory, unless `--no-project`.
+fn discover_project(no_project: bool, target_dirs: &[PathBuf]) -> Option<PathBuf> {
+    if no_project {
+        return None;
+    }
+    let mut starts = Vec::with_capacity(target_dirs.len() + 1);
+    if let Ok(cwd) = std::env::current_dir() {
+        starts.push(cwd);
+    }
+    starts.extend(target_dirs.iter().cloned());
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from);
+    find_project_config(&starts, home.as_deref())
+}
+
+/// The user config with any project config layered over it. A project config alone is
+/// enough to run — a repo that ships `.smartopen.toml` should work on a machine that
+/// never ran `--init-config`.
+fn load_effective_config(config_path: &Path, project_path: Option<&Path>) -> Result<Config> {
+    let base = match project_path {
+        Some(_) if !config_path.exists() => Config::default(),
+        _ => load_config(config_path)?,
+    };
+    let Some(project_path) = project_path else {
+        return Ok(base);
+    };
+    let project = load_config(project_path)
+        .with_context(|| format!("in project config {}", project_path.display()))?;
+    Ok(merge_project(base, project, project_path))
 }
 
 fn run_subcommand(subcommand: Subcommands) -> Result<i32> {
@@ -333,7 +409,7 @@ fn edit_config(path: &Path) -> Result<i32> {
         ..CommandEntry::default()
     };
 
-    run_command(&command, None)
+    run_command(&command, &[])
 }
 
 fn menu_art_for_selection(
@@ -353,11 +429,11 @@ fn resolve_command(
     commands: &[CommandEntry],
     requested_label: &Option<String>,
     menu_art: &str,
-    target: Option<&Target>,
+    targets: &[Target],
     history: &History,
 ) -> Result<Option<CommandEntry>> {
     let Some(label) = requested_label else {
-        return select_command(prompt, commands, menu_art, target, history);
+        return select_command(prompt, commands, menu_art, targets, history);
     };
 
     let label_lower = label.to_lowercase();
@@ -390,17 +466,17 @@ fn available_labels(commands: &[CommandEntry]) -> String {
 
 fn execute_or_print(
     command: &CommandEntry,
-    target: Option<&Target>,
+    targets: &[Target],
     dry_run: bool,
     history: &mut History,
 ) -> Result<i32> {
     if !dry_run {
         // Recorded before running, so a long-lived command still counts as picked.
         history.record(&command.label);
-        return run_command(command, target);
+        return run_command(command, targets);
     }
 
-    let plan = plan_command(command, target)?;
+    let plan = plan_command(command, targets)?;
     if let Some(cwd) = plan.cwd {
         println!("cwd: {}", cwd.display());
     }
