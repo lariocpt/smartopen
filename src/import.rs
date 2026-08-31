@@ -175,7 +175,7 @@ fn tldr(text: &str) -> Vec<CommandEntry> {
             continue;
         }
         if line.starts_with('`') && line.ends_with('`') && line.len() >= 2 {
-            let run = line[1..line.len() - 1].to_string();
+            let run = legalise_params(&line[1..line.len() - 1]);
             let Some(label) = pending_label.take() else {
                 continue;
             };
@@ -200,6 +200,49 @@ fn tldr(text: &str) -> Vec<CommandEntry> {
     out
 }
 
+/// A name the parameter parser will read back. tldr writes `{{path/to/file}}`,
+/// `{{source.tar}}` and `{{file1 file2}}`, none of which [`crate::params::is_name`]
+/// accepts — so the shortcut ran `tar xf {{source.tar}}` literally, without a word. Every
+/// other character becomes `_`, runs collapse, the ends are trimmed; nothing left is `arg`.
+fn legal_name(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for c in raw.chars() {
+        if c.is_ascii_alphanumeric() || c == '-' {
+            out.push(c);
+        } else if !out.ends_with('_') {
+            out.push('_');
+        }
+    }
+    let out = out.trim_matches('_');
+    if out.is_empty() {
+        "arg".to_string()
+    } else {
+        out.to_string()
+    }
+}
+
+/// Every `{{…}}` in `run`, made a legal name.
+fn legalise_params(run: &str) -> String {
+    let mut out = String::with_capacity(run.len());
+    let mut rest = run;
+    while let Some(start) = rest.find("{{") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        match after.find("}}") {
+            Some(end) => {
+                out.push_str(&format!("{{{{{}}}}}", legal_name(&after[..end])));
+                rest = &after[end + 2..];
+            }
+            None => {
+                out.push_str(&rest[start..]);
+                rest = "";
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// `<arg>` → `{{arg}}`, returning the names found (with any `=default` still attached,
 /// which pet's caller splits off).
 fn angle_to_braces(command: &str) -> (String, Vec<String>) {
@@ -211,10 +254,16 @@ fn angle_to_braces(command: &str) -> (String, Vec<String>) {
         match after.find('>') {
             Some(end) if !after[..end].is_empty() && !after[..end].contains(' ') => {
                 let inner = &after[..end];
-                let name = inner.split('=').next().unwrap_or(inner);
+                let (name, default) = match inner.split_once('=') {
+                    Some((name, default)) => (legal_name(name), Some(default)),
+                    None => (legal_name(inner), None),
+                };
                 out.push_str(&rest[..start]);
                 out.push_str(&format!("{{{{{name}}}}}"));
-                names.push(inner.to_string());
+                names.push(match default {
+                    Some(default) => format!("{name}={default}"),
+                    None => name,
+                });
                 rest = &after[end + 1..];
             }
             _ => {
@@ -262,11 +311,31 @@ mod tests {
     fn tldr_pages_become_a_group_gated_on_the_program() {
         let page = "# tar\n\n> Archiving utility.\n\n- Create an archive:\n\n`tar cf {{target.tar}} {{file1 file2}}`\n\n- List the contents:\n\n`tar tvf {{archive.tar}}`\n";
         let shortcuts = tldr(page);
+        // tldr's placeholder spellings are not parameter names; the review ran the
+        // imported `tar xf {{source.tar}}` and it ran literally.
+        assert_eq!(shortcuts[0].run, "tar cf {{target_tar}} {{file1_file2}}");
+        assert_eq!(shortcuts[1].run, "tar tvf {{archive_tar}}");
+        for shortcut in &shortcuts {
+            for name in crate::params::names(&shortcut.run) {
+                assert!(crate::params::is_name(&name), "{name}");
+                assert!(shortcut.param.contains_key(&name), "{name} not a param");
+            }
+        }
         assert_eq!(shortcuts.len(), 2);
         assert_eq!(shortcuts[0].label, "Create an archive");
         assert_eq!(shortcuts[0].group.as_deref(), Some("tar"));
         assert_eq!(shortcuts[0].when.as_ref().unwrap().has, ["tar"]);
-        assert!(shortcuts[1].run.contains("{{archive.tar}}"));
+        assert_eq!(legal_name("path/to/file"), "path_to_file");
+        assert_eq!(legal_name("my-arg"), "my-arg");
+        assert_eq!(legal_name("  "), "arg");
+        assert_eq!(
+            angle_to_braces("scp <src.file=a.txt> <host>").0,
+            "scp {{src_file}} {{host}}"
+        );
+        assert_eq!(
+            angle_to_braces("scp <src.file=a.txt> <host>").1,
+            vec!["src_file=a.txt".to_string(), "host".to_string()]
+        );
     }
 
     #[test]

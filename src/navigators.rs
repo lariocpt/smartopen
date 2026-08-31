@@ -60,6 +60,16 @@ pub struct Options {
 
 /// The exit code: 0, or 1 from `check` when the target would change.
 pub fn run(navigator: Navigator, action: Action, options: &Options) -> Result<i32> {
+    if action == Action::PrintSpec {
+        // Always the built-in default, in editable form: a starting template.
+        print!("{}", spec::spec_to_file_string(&Spec::builtin())?);
+        return Ok(0);
+    }
+    if options.spec.is_some() && !options.rules {
+        bail!(
+            "--spec only applies with --rules: without it every file is delegated to the menu and the spec is not read"
+        );
+    }
     let base = match &options.spec {
         Some(path) => {
             let text = fs::read_to_string(path)
@@ -78,12 +88,6 @@ pub fn run(navigator: Navigator, action: Action, options: &Options) -> Result<i3
         Engine::Smartopen
     };
     let effective = engine::effective(&base, engine, &bin);
-
-    if action == Action::PrintSpec {
-        // Always the built-in default, in editable form: a starting template.
-        print!("{}", spec::spec_to_file_string(&Spec::builtin())?);
-        return Ok(0);
-    }
 
     match navigator {
         Navigator::Yazi => yazi(action, options, &effective),

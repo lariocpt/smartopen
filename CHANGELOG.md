@@ -26,6 +26,11 @@ file manager, a shell keybinding, or the command line with one config.
 - `Cargo.toml` carries the crates.io metadata (description, license, repository,
   keywords, categories, MSRV 1.88) and a release profile with thin LTO and stripping.
 - `--version` reports `smartopen <version>` from both binaries.
+- The starter configs open URLs (`[[url]]`), scripts by their shebang and any text file
+  by MIME type, so a fresh install answers `smartopen https://…` and `smartopen ./deploy`
+  instead of "no matching commands"; the tools they name are ones you can install
+  anywhere, and the folder commands use `terminal = true` and `cwd = "{path}"` rather
+  than a hand-rolled ghostty line.
 
 ### Added
 
@@ -42,6 +47,26 @@ file manager, a shell keybinding, or the command line with one config.
   `${TERMINAL:-ghostty}` reached the shell as `$` and the dispatcher's `${1##*/}` as
   nothing. The verb no longer contains a brace other than `{file}`; `${VAR:-default}`
   forms are hoisted into a prelude. Found by the same test, in a real broot.
+- **Enter in yazi ran carbonyl instead of the menu.** The default yazi engine listed
+  carbonyl ahead of the delegate for images and video, and gitui and lazyenv for
+  directories — one desk's tools, and yazi runs the first opener it finds. The engine now
+  writes one rule: everything, directories included, goes to the menu, and its own
+  `[[folder]]` and file associations decide from there. Found by the review, in a real
+  yazi.
+- **`.env` and `Makefile` rules never matched in yazi.** yazi matches a `url` glob
+  against the whole path, so a bare name matches nothing; the yazi renderer anchors it as
+  `**/.env`. broot's dispatcher matches the basename and keeps the bare spelling.
+- **The broot verb needed ghostty.** It opened a new terminal window through
+  `$TERMINAL`, falling back to ghostty whatever the OS. It now runs in broot's own
+  terminal, the way broot's `edit` verb runs `$EDITOR`; a command that wants its own
+  window says `terminal = true`.
+- **A selection from yazi opened one file, silently.** `{path}` is the first target by
+  design; a command that names only it now says on stderr how many targets it dropped,
+  and the starter configs and the wizard's catalogue use `{paths}` wherever the tool
+  takes several files.
+- **`yazi apply` moved untouched tables.** The rewritten `[opener]`/`[open]` went to the
+  end of the file, so a `[preview]` that followed them showed up in `diff` as moved. They
+  go back where they were.
 - **Runs on macOS and Windows as well as Linux.** Command lines are quoted for the shell
   that will run them: `sh` gets `'…'`, `cmd.exe` gets `"…"` with embedded quotes doubled,
   and a value cmd cannot carry (a `%`, a newline) is refused rather than mangled. Target

@@ -70,10 +70,23 @@ fn render_run(r: &OpenerRun) -> String {
 fn render_rule(r: &OpenRule) -> String {
     let matcher = match &r.matcher {
         Matcher::Mime(s) => format!("mime = {}", basic(s)),
-        Matcher::Url(s) => format!("url = {}", basic(s)),
+        Matcher::Url(s) => format!("url = {}", basic(&yazi_url_glob(s))),
     };
     let uses: Vec<String> = r.use_openers.iter().map(|u| basic(u)).collect();
     format!("{{ {}, use = [{}] }}", matcher, uses.join(", "))
+}
+
+/// yazi matches a `url` glob against the whole path, with `*` crossing `/`: `*.md`
+/// matches anywhere, but a bare name — `.env`, `Makefile` — has nothing to absorb the
+/// directories and never matches at all. The review pressed Enter on a `.env` in yazi
+/// 26.8.15 and found the built-in rules dead; `**/.env` is what matches. The spec keeps the
+/// bare name because broot's dispatcher matches the basename.
+fn yazi_url_glob(glob: &str) -> String {
+    if glob.contains('/') || glob.starts_with('*') {
+        glob.to_string()
+    } else {
+        format!("**/{glob}")
+    }
 }
 
 /// yazi 26 hands an opener its files through `%s` (every selected file, shell-escaped),
@@ -152,6 +165,19 @@ mod tests {
             "{frag}"
         );
         assert!(!frag.contains("$@") && !frag.contains("$1"), "{frag}");
+    }
+
+    #[test]
+    fn bare_name_globs_are_anchored_so_yazi_matches_them() {
+        assert_eq!(yazi_url_glob(".env"), "**/.env");
+        assert_eq!(yazi_url_glob(".env.*"), "**/.env.*");
+        assert_eq!(yazi_url_glob("Makefile"), "**/Makefile");
+        assert_eq!(yazi_url_glob("*.env"), "*.env");
+        assert_eq!(yazi_url_glob("*.md"), "*.md");
+        assert_eq!(yazi_url_glob("src/*.rs"), "src/*.rs");
+        let frag = fragment(&Spec::builtin());
+        assert!(frag.contains(r#"url = "**/.env""#), "{frag}");
+        assert!(!frag.contains(r#"url = ".env""#), "{frag}");
     }
 
     #[test]

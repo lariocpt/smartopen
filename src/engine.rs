@@ -1,8 +1,11 @@
 //! Open strategy: turn the base [`Spec`] into the concrete spec to render.
 //!
-//! `Rules` (default) passes the spec through unchanged — explicit per-file-type openers.
-//! `Smartopen` replaces them with a single universal rule that delegates every file to the
-//! `smartopen` binary (the sibling app), keeping only the directory -> terminal rule.
+//! `Rules` (`--rules`) passes the spec through unchanged — explicit per-file-type openers.
+//! `Smartopen` (the default) replaces them with one rule that hands everything, directories
+//! included, to the `smartopen` binary: its `[[folder]]` and file associations decide from
+//! there. Nothing sits in front of the delegate. An earlier version listed `carbonyl`
+//! ahead of it for images and video, and Enter on a PNG in yazi ran carbonyl while the
+//! menu never appeared — the review caught the README promising otherwise.
 
 use crate::spec::{Matcher, OpenRule, OpenerDef, OpenerRun, Spec};
 
@@ -21,82 +24,28 @@ pub fn effective(base: &Spec, engine: Engine, smartopen_bin: &str) -> Spec {
 }
 
 fn smartopen_spec(bin: &str) -> Spec {
-    let gitui = OpenerDef {
-        name: "gitui".to_string(),
-        doc: Some("Open gitui for a directory.".to_string()),
-        runs: vec![OpenerRun {
-            run: r#"ghostty --working-directory "$1" -e "gitui" >/dev/null 2>&1"#.to_string(),
-            desc: Some("Open in gitui".to_string()),
-            block: false,
-            orphan: true,
-            for_platform: Some("linux".to_string()),
-        }],
-    };
-    let lazyenv = OpenerDef {
-        name: "lazyenv".to_string(),
-        doc: Some("Open lazyenv for a directory.".to_string()),
-        runs: vec![OpenerRun {
-            run: r#"ghostty --working-directory "$1" -e "lazyenv" >/dev/null 2>&1"#.to_string(),
-            desc: Some("Open in lazyenv".to_string()),
-            block: false,
-            orphan: true,
-            for_platform: Some("linux".to_string()),
-        }],
-    };
-    let carbonyl = OpenerDef {
-        name: "carbonyl".to_string(),
-        doc: Some("Open in carbonyl (terminal browser).".to_string()),
-        runs: vec![OpenerRun {
-            run: r#"carbonyl "$@""#.to_string(),
-            desc: Some("Open in carbonyl".to_string()),
-            block: true,
-            orphan: false,
-            for_platform: Some("unix".to_string()),
-        }],
-    };
     let smart = OpenerDef {
         name: "smartopen".to_string(),
-        doc: Some(format!(
-            "Delegate file opening to the `{bin}` smart opener."
-        )),
+        doc: Some(format!("Delegate opening to the `{bin}` menu.")),
         runs: vec![OpenerRun {
             run: format!(r#"{bin} "$@""#),
             desc: Some("smartopen".to_string()),
             block: true,
             orphan: false,
+            // The delegate is this cross-platform binary: no `for`, or yazi would drop
+            // the rule on every platform it did not name.
             for_platform: None,
         }],
     };
-    let rules = vec![
-        OpenRule {
-            matcher: Matcher::Mime("inode/directory".to_string()),
-            use_openers: vec![
-                "gitui".to_string(),
-                "lazyenv".to_string(),
-                "smartopen".to_string(),
-            ],
-            doc: Some(
-                "directories open in gitui or lazyenv, or the menu where those are not".to_string(),
-            ),
-        },
-        OpenRule {
-            matcher: Matcher::Mime("video/*".to_string()),
-            use_openers: vec!["carbonyl".to_string(), "smartopen".to_string()],
-            doc: Some("videos open in carbonyl".to_string()),
-        },
-        OpenRule {
-            matcher: Matcher::Mime("image/*".to_string()),
-            use_openers: vec!["carbonyl".to_string(), "smartopen".to_string()],
-            doc: Some("images open in carbonyl".to_string()),
-        },
-        OpenRule {
-            matcher: Matcher::Mime("*".to_string()),
-            use_openers: vec!["smartopen".to_string()],
-            doc: Some("everything else -> smartopen (it runs its own open-with menu)".to_string()),
-        },
-    ];
+    let rules = vec![OpenRule {
+        matcher: Matcher::Mime("*".to_string()),
+        use_openers: vec!["smartopen".to_string()],
+        doc: Some(
+            "everything, directories included -> smartopen (it runs its own menu)".to_string(),
+        ),
+    }];
     Spec {
-        openers: vec![gitui, lazyenv, carbonyl, smart],
+        openers: vec![smart],
         prepend_rules: rules,
     }
 }
@@ -112,11 +61,16 @@ mod tests {
     }
 
     #[test]
-    fn smartopen_engine_shape() {
+    fn smartopen_engine_is_the_delegate_and_nothing_in_front_of_it() {
         let s = effective(&Spec::builtin(), Engine::Smartopen, "smartopen");
-        assert_eq!(s.openers.len(), 4);
-        assert_eq!(s.prepend_rules.len(), 4);
-        assert!(s.openers.iter().any(|o| o.name == "smartopen"));
+        assert_eq!(s.openers.len(), 1);
+        assert_eq!(s.prepend_rules.len(), 1);
+        assert_eq!(s.openers[0].name, "smartopen");
+        assert_eq!(s.prepend_rules[0].matcher, Matcher::Mime("*".to_string()));
+        assert_eq!(
+            s.prepend_rules[0].use_openers,
+            vec!["smartopen".to_string()]
+        );
         s.validate().expect("smartopen spec must validate");
     }
 

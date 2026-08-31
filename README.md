@@ -67,6 +67,13 @@ in one menu, and the same file drives every way you reach it:
 | a shortcut launcher too | yes, context-aware | no | no | no | no |
 | drives yazi and broot | yes | — | — | ranger only | ranger |
 | one static binary | yes | — | yes | no | no |
+| several files at once | `{paths}` | no | `%F` | `"$@"` | yes |
+| sets the desktop's default app (`mimeapps.list`) | no | yes | yes | no | no |
+
+That last row is the honest one: smartopen's associations live in its own TOML and are
+read by smartopen, yazi and broot — not by your browser's "open with" or a double-click.
+Keep `xdg-open` (or `handlr`) for that; point it at `smartopen` only for the types you
+want a menu for.
 
 ## Platform support
 
@@ -76,7 +83,7 @@ in one menu, and the same file drives every way you reach it:
 | Placeholders quoted for | `'…'` | `'…'` | `"…"` |
 | Config | `~/.config/smartopen/config.toml` (`$XDG_CONFIG_HOME`) | same — **not** `~/Library/Application Support` | `%APPDATA%\smartopen\config.toml` |
 | Starter config names tools that exist there | yes | yes (`open -R`, Terminal) | yes (`start`, `explorer`, `wt`) |
-| `terminal = true` opens | `$TERMINAL` / ghostty / foot / kitty / alacritty / wezterm / xterm | Terminal.app | Windows Terminal or `cmd` |
+| `terminal = true` opens | `$TERMINAL` / ghostty / foot / kitty / alacritty / wezterm / xterm | Terminal.app, or `$TERMINAL`'s own CLI (ghostty, kitty, alacritty, wezterm) | Windows Terminal or `cmd` |
 | yazi + broot integration | yes | yes (broot reads `~/Library/Application Support/org.dystroy.broot`, and smartopen writes there) | yazi yes; broot no — broot runs verbs without a shell, and the Enter verb needs `sh` |
 | Verified by | daily use + CI + real yazi/broot in a pty + five distros in containers | CI + real yazi/broot in a pty | CI (sandboxed CLI suite only) |
 
@@ -241,7 +248,7 @@ Every command — in an association or a shortcut — takes:
 | placeholder | value |
 |---|---|
 | `{path}` | absolute path (or the URL) of the first target |
-| `{paths}` | every target, quoted and space-joined |
+| `{paths}` | every target, quoted and space-joined — with several targets, a command that uses only `{path}` runs on the first and says so on stderr |
 | `{dir}` | its directory (the directory itself for a folder) |
 | `{name}`, `{stem}`, `{ext}` | file name, name without extension, extension |
 | `{url}`, `{scheme}`, `{host}` | the URL; a file renders as `file://…`, `file`, and empty |
@@ -325,6 +332,12 @@ eval "$(smartopen shell zsh)"     # ~/.zshrc; also bash, fish
 
 `Ctrl-G` opens the launcher and puts the chosen command on your prompt line, unexecuted —
 edit it, then run it, and it lands in your history like anything else you typed.
+
+This is not a snippet manager. navi, pet and intelli-shell hold thousands of commands,
+with richer variable syntax and a community behind them — keep one of those for that.
+smartopen's shortcuts are the ten commands *this* repo needs: gated on where you are,
+quoted so a value with a `;` in it stays a value, and shipped in the repo's own
+`.smartopen.toml`. The import below is how the two meet.
 
 ### Bringing your existing snippets
 

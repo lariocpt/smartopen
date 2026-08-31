@@ -623,3 +623,116 @@ fn a_file_named_like_a_placeholder_is_quoted_once() {
     );
     assert_eq!(printed.matches(quote).count(), 2, "{printed}");
 }
+
+#[test]
+fn json_without_list_or_doctor_is_refused_not_run() {
+    // `smartopen --json file.csv` used to open the file with the flag ignored.
+    let sandbox = Sandbox::new();
+    sandbox.write_config(&csv_config("echo {path}"));
+    let file = sandbox.path().join("a.csv");
+    fs::write(&file, "a\n").unwrap();
+    sandbox
+        .smartopen()
+        .arg("--json")
+        .arg(&file)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "--json goes with --list or --doctor",
+        ));
+}
+
+#[test]
+fn spec_without_rules_is_refused_rather_than_ignored() {
+    let sandbox = Sandbox::new();
+    let spec = sandbox
+        .smartopen()
+        .args(["yazi", "print-spec"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let spec_path = sandbox.path().join("spec.toml");
+    fs::write(&spec_path, spec).unwrap();
+    sandbox
+        .smartopen()
+        .args(["yazi", "print", "--spec"])
+        .arg(&spec_path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--spec only applies with --rules"));
+    sandbox
+        .smartopen()
+        .args(["yazi", "print", "--rules", "--spec"])
+        .arg(&spec_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[opener]"));
+}
+
+#[test]
+fn a_command_that_names_only_the_first_of_several_targets_says_so() {
+    let sandbox = Sandbox::new();
+    sandbox.write_config(&csv_config("echo {path}"));
+    let a = sandbox.path().join("a.csv");
+    let b = sandbox.path().join("b.csv");
+    fs::write(&a, "a\n").unwrap();
+    fs::write(&b, "b\n").unwrap();
+    sandbox
+        .smartopen()
+        .arg("--dry-run")
+        .arg(&a)
+        .arg(&b)
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("1 of 2 targets ignored"));
+
+    // `{paths}` takes them all, and there is nothing to say.
+    sandbox.write_config(&csv_config("echo {paths}"));
+    sandbox
+        .smartopen()
+        .arg("--dry-run")
+        .arg(&a)
+        .arg(&b)
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("ignored").not());
+}
+
+#[test]
+fn the_starter_config_answers_a_url_and_a_shebang_script() {
+    // handlr opened a URL and an extensionless script with zero config; the starter
+    // config used to answer both with "no matching commands".
+    let sandbox = Sandbox::new();
+    sandbox
+        .smartopen()
+        .args(["config", "init"])
+        .assert()
+        .success();
+    sandbox
+        .smartopen()
+        .args(["--list", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"url\""));
+    #[cfg(unix)]
+    {
+        let script = sandbox.path().join("deploy");
+        fs::write(&script, "#!/usr/bin/env python3\nprint('hi')\n").unwrap();
+        sandbox
+            .smartopen()
+            .args(["--dry-run", "--command", "Edit"])
+            .arg(&script)
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("deploy"));
+    }
+    let url = "https://github.com/lariocpt/smartopen";
+    sandbox
+        .smartopen()
+        .args(["--dry-run", "--command", "Open in browser", url])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(url));
+}

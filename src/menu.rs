@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
@@ -61,8 +61,38 @@ struct TerminalSession {
     terminal: Terminal<Backend>,
 }
 
+/// The picker reads keys from the terminal itself, so without one it cannot run at all.
+/// Say so — crossterm otherwise reports the raw errno from opening `/dev/tty`, and
+/// "No such device or address (os error 6)" is what a script author saw.
+fn ensure_terminal() -> Result<()> {
+    #[cfg(unix)]
+    let attached = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/tty")
+        .is_ok();
+    #[cfg(windows)]
+    let attached = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("CONIN$")
+        .is_ok();
+    #[cfg(not(any(unix, windows)))]
+    let attached = {
+        use std::io::IsTerminal;
+        io::stdin().is_terminal()
+    };
+    if attached {
+        return Ok(());
+    }
+    bail!(
+        "the menu needs a terminal and none is attached; pass --command LABEL to choose without one"
+    )
+}
+
 impl TerminalSession {
     fn new() -> Result<Self> {
+        ensure_terminal()?;
         enable_raw_mode()?;
         let mut writer = terminal_writer();
         execute!(writer, EnterAlternateScreen)?;
