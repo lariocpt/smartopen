@@ -84,13 +84,15 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           set -eux
+          if ! command -v zsh >/dev/null; then sudo apt-get update && sudo apt-get install -y zsh; fi
           ./target/debug/smartopen shell zsh  | zsh -n
           ./target/debug/smartopen shell bash | bash -n
           ./target/debug/opn shell bash | grep -q '_opn_widget'
 
-  # L3: real yazi, real broot, a real pty. Linux and macOS are required; Windows runs
-  # under ConPTY as advisory until it has passed on three consecutive tags (recorded in
-  # AGENTS.md), then it is promoted.
+  # L3: real yazi, real broot, a real pty. Linux and macOS are required. The suite is
+  # cfg(unix) today, so the Windows job installs the tools and then runs nothing — it is
+  # advisory (continue-on-error) and honest about that; making the harness drive ConPTY is
+  # the first step to promoting it, recorded in AGENTS.md.
   navigators:
     name: navigators ${{ matrix.os }}
     strategy:
@@ -118,10 +120,11 @@ jobs:
           tmp=$(mktemp -d)
           gh release download --repo sxyazi/yazi --pattern 'yazi-x86_64-unknown-linux-gnu.zip' --dir "$tmp"
           unzip -q "$tmp"/yazi-*.zip -d "$tmp/yazi"
-          sudo install -m0755 "$tmp"/yazi/*/yazi "$tmp"/yazi/*/ya /usr/local/bin/
+          sudo install -m0755 "$(find "$tmp/yazi" -type f -name yazi | head -1)" "$(find "$tmp/yazi" -type f -name ya | head -1)" /usr/local/bin/
           gh release download --repo Canop/broot --pattern 'broot_*.zip' --dir "$tmp"
           unzip -q "$tmp"/broot_*.zip -d "$tmp/broot"
-          sudo install -m0755 "$tmp"/broot/x86_64-linux/broot /usr/local/bin/broot
+          # The zip carries every target; pick the x86_64 linux binary wherever it sits.
+          sudo install -m0755 "$(find "$tmp/broot" -type f -name broot -path '*x86_64*linux*' | head -1)" /usr/local/bin/broot
           yazi --version && broot --version
         env:
           GH_TOKEN: ${{ github.token }}
