@@ -1,15 +1,20 @@
-#![allow(unused)]
-
 mod config;
-mod diff;
 mod doctor;
-mod engine;
 mod matcher;
 mod menu;
 mod render;
 mod runner;
-mod spec;
 mod tomlio;
+
+// The yazi/broot surface. Today only `--setup-yazi` reaches it, so the diff/check/print
+// paths are dead until they become `smartopen yazi …` subcommands; the allow is scoped
+// here, not crate-wide, so nothing else can hide behind it.
+#[allow(dead_code)]
+mod diff;
+#[allow(dead_code)]
+mod engine;
+#[allow(dead_code)]
+mod spec;
 
 use std::path::{Path, PathBuf};
 
@@ -27,7 +32,7 @@ use crate::runner::{plan_command, run_command, shell_quote};
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "opn",
+    name = "smartopen",
     version,
     about = "Open files and shortcuts from configurable command menus"
 )]
