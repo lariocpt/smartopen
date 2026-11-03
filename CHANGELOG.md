@@ -19,6 +19,12 @@ section here. `version` in `Cargo.toml` must match the tag being released.
   wrote its payload into `yazi.toml` / `smartopen.hjson` as a second command. The name
   is now quoted for the shell that will run it, like every substituted value; a bare
   name quotes to itself, so the common case is byte-identical.
+- **The broot navigator test broke against broot ≥ 1.62.** The test pty never answered
+  terminal queries, which older broot tolerated. broot 1.62 probes for kitty keyboard
+  support (crossterm sends `ESC[?u` then the primary-device-attributes query `ESC[c`)
+  and aborts with a termimad IO error when no terminal ever replies, so the tree was
+  never drawn and the Enter-verb chain could not be tested. The pty harness now answers
+  the DA query the way a plain xterm does, which crossterm reads as "no kitty support".
 - **The installer died on stock Alpine.** busybox wget has no `--https-only` and rejects
   the whole command line when it sees one, so `wget -qO- … | sh` ended in a usage dump
   and an error blaming the release — on the one distribution the static musl build exists
