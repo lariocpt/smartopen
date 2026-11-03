@@ -298,7 +298,12 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
+// deny_unknown_fields, like every config table: a spec file is the one config surface
+// that is explicitly meant to be hand-edited (`print-spec` exists to produce it), and a
+// misspelt key there used to parse clean — `blocking = true` silently dropped, a rule
+// silently not matching. A typo must be an error at load time, with the valid keys named.
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawOpener {
     name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -315,6 +320,7 @@ struct RawOpener {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawRule {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     mime: Option<String>,
@@ -328,6 +334,7 @@ struct RawRule {
 
 /// The on-disk spec-file representation (`--spec` / `print-spec`).
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RawSpec {
     #[serde(default)]
     opener: Vec<RawOpener>,
@@ -458,6 +465,32 @@ mod tests {
         let mut s = Spec::builtin();
         s.prepend_rules[0].use_openers = vec!["does-not-exist".into()];
         assert!(matches!(s.validate(), Err(SpecError::UnknownOpener { .. })));
+    }
+
+    #[test]
+    fn a_misspelt_spec_key_is_an_error_not_a_silent_no_op() {
+        // print-spec output is meant to be hand-edited; a typo must fail loudly,
+        // like every config table already does.
+        let opener_typo = "[[opener]]\nname = \"edit\"\nrun = \"m\"\nblocking = true\n";
+        let error = RawSpec::parse(opener_typo).expect_err("must reject `blocking`");
+        assert!(
+            error.to_string().contains("unknown field `blocking`"),
+            "{error}"
+        );
+
+        let rule_typo = "[[rule]]\nurl = \"*.md\"\nuse = [\"edit\"]\nuses = [\"edit\"]\n";
+        let error = RawSpec::parse(rule_typo).expect_err("must reject `uses`");
+        assert!(
+            error.to_string().contains("unknown field `uses`"),
+            "{error}"
+        );
+
+        let top_typo =
+            "[[rule]]\nurl = \"*.md\"\nuse = [\"edit\"]\n[[rules]]\nurl = \"x\"\nuse = []\n";
+        assert!(
+            RawSpec::parse(top_typo).is_err(),
+            "a misspelt top-level table"
+        );
     }
 
     #[test]

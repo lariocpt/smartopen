@@ -13,6 +13,11 @@ section here. `version` in `Cargo.toml` must match the tag being released.
 
 ### Fixed
 
+- **A spec file silently ignored misspelt keys.** The config has always refused an
+  unknown key at load time, but the `--spec` surface — the one file `print-spec` exists
+  to produce for hand-editing — did not: `blocking = true` parsed clean and was dropped,
+  so an opener quietly lacked the flag it asked for. Spec tables now refuse unknown
+  fields like every other table.
 - **The installer died on stock Alpine.** busybox wget has no `--https-only` and rejects
   the whole command line when it sees one, so `wget -qO- … | sh` ended in a usage dump
   and an error blaming the release — on the one distribution the static musl build exists
