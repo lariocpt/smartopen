@@ -13,6 +13,11 @@ section here. `version` in `Cargo.toml` must match the tag being released.
 
 ### Fixed
 
+- **A spec file silently ignored misspelt keys.** The config has always refused an
+  unknown key at load time, but the `--spec` surface — the one file `print-spec` exists
+  to produce for hand-editing — did not: `blocking = true` parsed clean and was dropped,
+  so an opener quietly lacked the flag it asked for. Spec tables now refuse unknown
+  fields like every other table.
 - **`yazi apply` / `broot apply` embedded `--bin` unquoted into the command line the
   navigator runs.** A delegate path with a space (`C:\my bin\opn.exe`, `/my bin/opn`)
   reached yazi as two words — the opener could never run — and a `--bin` holding a `;`
