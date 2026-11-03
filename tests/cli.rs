@@ -360,6 +360,36 @@ fn shortcuts_import_write_appends_to_the_config_in_effect_not_the_default() {
 }
 
 #[test]
+fn yazi_print_quotes_a_bin_that_is_not_a_plain_name() {
+    // The bin is embedded in a shell line yazi runs; unquoted, a spaced path became
+    // two words and a `;` became a second command written into yazi.toml.
+    let sandbox = Sandbox::new();
+    let (bin, expected) = if cfg!(windows) {
+        // No single quote in the value, so toml_string keeps a literal string and
+        // the cmd quotes ride through verbatim.
+        (
+            r"C:\my bin\opn.exe",
+            r#"run = '"C:\my bin\opn.exe" %s'"#.to_string(),
+        )
+    } else {
+        ("/my bin/opn", r#"run = "'/my bin/opn' %s""#.to_string())
+    };
+    sandbox
+        .smartopen()
+        .args(["yazi", "print", "--bin", bin])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(expected));
+    // A bare name quotes to itself: the common case is untouched.
+    sandbox
+        .smartopen()
+        .args(["yazi", "print", "--bin", "opn"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("run = 'opn %s'"));
+}
+
+#[test]
 fn yazi_print_is_toml_and_broot_print_is_json() {
     let sandbox = Sandbox::new();
     let yazi = sandbox
