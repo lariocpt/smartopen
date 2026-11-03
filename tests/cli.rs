@@ -333,9 +333,12 @@ fn dry_run_never_asks_and_never_runs_a_choices_command() {
     // `--dry-run` used to run the former and demand the latter before printing.
     let sandbox = Sandbox::new();
     let marker = sandbox.path().join("choices_ran");
+    // TOML basic strings consume backslashes, and a Windows temp path is all
+    // backslashes: `C:\Users` parses as an invalid `\U` unicode escape.
+    let marker_toml = marker.display().to_string().replace('\\', "\\\\");
     sandbox.write_config(&format!(
         "[[shortcut]]\nlabel = \"P\"\nrun = \"echo {{{{b}}}}\"\n\n[shortcut.param.b]\nchoices = \"echo one; echo two; touch {}\"\n",
-        marker.display()
+        marker_toml
     ));
 
     sandbox
