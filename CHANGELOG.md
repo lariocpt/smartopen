@@ -9,7 +9,7 @@ The `## [X.Y.Z]` heading shape is load-bearing, not a style choice:
 next to use as the GitHub Release notes, and refuses to publish a tag that has no
 section here. `version` in `Cargo.toml` must match the tag being released.
 
-## [Unreleased]
+## [0.2.1] - 2026-11-03
 
 ### Fixed
 
