@@ -59,6 +59,11 @@ section here. `version` in `Cargo.toml` must match the tag being released.
 
 ### Changed
 
+- **The installer dropped its LAN-mirror source.** `--source=apps` and the `APPS_URL`
+  default named private infrastructure a stranger cannot reach, so the route and its
+  default are gone rather than merely blanked; `--source` now accepts only `github`,
+  which was already the default — every public call that worked before behaves
+  identically, and `--source=apps` now says so plainly.
 - **The LAN mirror job's pipeline left this repository.** The Jenkinsfile names internal
   hosts and paths, and this repository is public now, so the pipeline lives in the
   estate's private infrastructure repo beside the other release-mirror jobs. It mirrors

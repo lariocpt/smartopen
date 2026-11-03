@@ -20,13 +20,13 @@
 #   vX.Y.Z, --version=vX.Y.Z   install a specific release          [SMARTOPEN_VERSION]
 #   --prefix=DIR               install root, default ~/.local      [SMARTOPEN_PREFIX]
 #   --target=TRIPLE            override the detected Rust target   [SMARTOPEN_TARGET]
-#   --source=github|apps       where to resolve from               [SMARTOPEN_SOURCE]
+#   --source=github            where to resolve from               [SMARTOPEN_SOURCE]
 #   --download-only=DIR        fetch and verify into DIR, install nothing
 #   --help
 #
 # Also honoured: SMARTOPEN_REPO (owner/repo), SMARTOPEN_DOWNLOAD_BASE (a URL or file://
 # directory holding the archives and SHA256SUMS — how the container tests rehearse a
-# release before it exists), APPS_URL (the LAN mirror).
+# release before it exists).
 set -eu
 
 SO_REPO_DEFAULT='lariocpt/smartopen'
@@ -49,12 +49,12 @@ Options (env var in brackets):
   vX.Y.Z, --version=vX.Y.Z   install a specific release          [SMARTOPEN_VERSION]
   --prefix=DIR               install root, default ~/.local      [SMARTOPEN_PREFIX]
   --target=TRIPLE            override the detected Rust target   [SMARTOPEN_TARGET]
-  --source=github|apps       where to resolve from               [SMARTOPEN_SOURCE]
+  --source=github            where to resolve from               [SMARTOPEN_SOURCE]
   --download-only=DIR        fetch and verify into DIR, install nothing
   --help
 
 Also honoured: SMARTOPEN_REPO (owner/repo), SMARTOPEN_DOWNLOAD_BASE (a URL or file://
-directory holding the archives and SHA256SUMS), APPS_URL (the LAN mirror).
+directory holding the archives and SHA256SUMS).
 EOF
 }
 
@@ -136,20 +136,6 @@ so_detect_target() {
             so_die 'on Windows use: cargo install smartopen, or the .zip from the Releases page' ;;
         *) so_die "no prebuilt binary for $os; try: cargo install smartopen" ;;
     esac
-}
-
-# Resolve the LAN mirror through its index rather than guessing a path: the rows whose
-# path goes via latest/ are the only ones a client is meant to read, and they carry the
-# sha256 inline. The plane serves the two binaries as plain files, not an archive.
-so_resolve_apps() {                           # -> SO_APPS_ROWS (file<TAB>sha<TAB>relpath lines)
-    apps="${APPS_URL:-https://apps.in.drlario.org}"
-    idx="$SO_TMP/index.tsv"
-    so_fetch "$apps/index.tsv" "$idx" || so_die "cannot reach the LAN mirror at $apps"
-    SO_APPS_ROWS=$(awk -F'\t' -v v="$SO_VERSION" '
-        $1=="tool" && $2=="smartopen" && index($7,"/latest/")>0 &&
-        (v=="latest" || $3==v || $3==substr(v,2)) { print $4 "\t" $5 "\t" $7 }' "$idx")
-    [ -n "$SO_APPS_ROWS" ] || so_die "no smartopen rows for '$SO_VERSION' in $apps/index.tsv"
-    SO_APPS_URL="$apps"
 }
 
 # The /releases/latest/download/ redirect resolves without a token, so there is no
@@ -249,17 +235,7 @@ main() {
                 so_install_file "$src" "$so_prefix/bin/$bin"
             done
             ;;
-        apps)
-            so_resolve_apps
-            [ -z "$so_dlonly" ] || so_die '--download-only is for the github source'
-            printf '%s\n' "$SO_APPS_ROWS" | while IFS="$(printf '\t')" read -r file sha relpath; do
-                so_say "downloading $SO_APPS_URL/$relpath"
-                so_fetch "$SO_APPS_URL/$relpath" "$SO_TMP/$file" || so_die "download failed: $relpath"
-                so_verify "$SO_TMP/$file" "$sha"
-                so_install_file "$SO_TMP/$file" "$so_prefix/bin/$file"
-            done
-            ;;
-        *) so_die "unknown --source '$so_source' (want: github, apps)" ;;
+        *) so_die "unknown --source '$so_source' (want: github)" ;;
     esac
 
     so_say "installed $so_prefix/bin/smartopen and $so_prefix/bin/opn ($("$so_prefix/bin/smartopen" --version 2>/dev/null || echo 'version unknown'))"

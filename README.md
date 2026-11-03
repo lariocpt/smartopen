@@ -183,8 +183,9 @@ With nothing typed, what you pick often and recently comes first (one-week half-
 ## Configuration
 
 `smartopen config path` prints where the file is. `smartopen config doctor` says whether
-every command's program is installed (`--strict` makes a missing one exit 1; `--json` for
-scripts). A misspelt key is an error at load time, with the valid keys listed.
+every command's program is installed and whether the menu art loads (`--strict` exits 1
+on any problem the report counts — a missing program or unreadable menu art; `--json`
+for scripts). A misspelt key is an error at load time, with the valid keys listed.
 
 ### Associations
 
