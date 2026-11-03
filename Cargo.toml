@@ -20,7 +20,6 @@ exclude = [
     "/AGENTS.md",
     "/CLAUDE.md",
     "/docs",
-    "/Jenkinsfile",
     "/scripts",
     "/test",
 ]

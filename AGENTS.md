@@ -139,7 +139,9 @@ finished run (a missing `CARGO_REGISTRY_TOKEN`, say) is re-run alone with
 Two planes, one source of truth: the GitHub Release is the bytes. The LAN Jenkins job
 **mirrors** it (download, verify `SHA256SUMS`, `gh attestation verify`, smoke, republish
 unchanged, assert byte identity) — it never builds. Consumers on the estate install from
-the public release; the plane is a cache for machines with no route out.
+the public release; the plane is a cache for machines with no route out. The mirror's
+pipeline lives in the estate's private infra repo (`publish/jenkins/smartopen.Jenkinsfile`),
+not here — it names internal hosts and paths, and this repo is public.
 
 ## Personal-repo convention
 
