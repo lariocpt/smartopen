@@ -13,6 +13,12 @@ section here. `version` in `Cargo.toml` must match the tag being released.
 
 ### Fixed
 
+- **The broot navigator test broke against broot ≥ 1.62.** The test pty never answered
+  terminal queries, which older broot tolerated. broot 1.62 probes for kitty keyboard
+  support (crossterm sends `ESC[?u` then the primary-device-attributes query `ESC[c`)
+  and aborts with a termimad IO error when no terminal ever replies, so the tree was
+  never drawn and the Enter-verb chain could not be tested. The pty harness now answers
+  the DA query the way a plain xterm does, which crossterm reads as "no kitty support".
 - **`shortcuts import --write` wrote to the default config even with `--config-path`.**
   Every other subcommand honours `--config-path`; the importer resolved the default path
   itself, so it backed up and appended to a file the user never named while the named one
