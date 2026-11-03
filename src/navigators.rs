@@ -81,7 +81,17 @@ pub fn run(navigator: Navigator, action: Action, options: &Options) -> Result<i3
     };
     base.validate().context("spec failed validation")?;
 
+    // The delegate's name is embedded verbatim in a shell command line the navigator
+    // will run, so it needs the same guarantee every substituted value gets: quoted for
+    // the shell that will run it. An unquoted `--bin "my bin/opn"` wrote a line yazi
+    // ran as `my` with argument `bin/opn`, and a `--bin` carrying a `;` wrote the
+    // payload straight into yazi.toml / smartopen.hjson as a second command. The
+    // auto-detected name (a file stem) quotes to itself; only explicit `--bin` values
+    // change.
     let bin = options.bin.clone().unwrap_or_else(current_bin_name);
+    let bin = crate::shell::Shell::current()
+        .quote(&bin)
+        .with_context(|| format!("--bin {bin:?} cannot be a command name on this OS"))?;
     let engine = if options.rules {
         Engine::Rules
     } else {

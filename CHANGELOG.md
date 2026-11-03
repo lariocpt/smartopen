@@ -13,6 +13,12 @@ section here. `version` in `Cargo.toml` must match the tag being released.
 
 ### Fixed
 
+- **`yazi apply` / `broot apply` embedded `--bin` unquoted into the command line the
+  navigator runs.** A delegate path with a space (`C:\my bin\opn.exe`, `/my bin/opn`)
+  reached yazi as two words — the opener could never run — and a `--bin` holding a `;`
+  wrote its payload into `yazi.toml` / `smartopen.hjson` as a second command. The name
+  is now quoted for the shell that will run it, like every substituted value; a bare
+  name quotes to itself, so the common case is byte-identical.
 - **The installer died on stock Alpine.** busybox wget has no `--https-only` and rejects
   the whole command line when it sees one, so `wget -qO- … | sh` ended in a usage dump
   and an error blaming the release — on the one distribution the static musl build exists
