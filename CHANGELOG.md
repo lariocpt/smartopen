@@ -13,6 +13,11 @@ section here. `version` in `Cargo.toml` must match the tag being released.
 
 ### Fixed
 
+- **`--dry-run` asked questions and ran `choices` commands.** A parameter prompt needs a
+  terminal and a `choices` command is a real command — the dry run executed it before
+  printing anything, so previewing a shortcut could touch the machine or block on a
+  picker. A dry run now fills in only what `--param` presets and prints the rest as
+  `{{name}}`; asking stays reserved for runs that will actually run.
 - **The installer died on stock Alpine.** busybox wget has no `--https-only` and rejects
   the whole command line when it sees one, so `wget -qO- … | sh` ended in a usage dump
   and an error blaming the release — on the one distribution the static musl build exists
