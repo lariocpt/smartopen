@@ -121,7 +121,7 @@ impl Sandbox {
 
 /// A child in a pty with its output captured on a thread.
 struct Pty {
-    writer: Box<dyn Write + Send>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
     output: Arc<Mutex<Vec<u8>>>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
 }
@@ -139,14 +139,30 @@ impl Pty {
         let child = pair.slave.spawn_command(cmd).unwrap();
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().unwrap();
-        let writer = pair.master.take_writer().unwrap();
+        let writer: Arc<Mutex<Box<dyn Write + Send>>> =
+            Arc::new(Mutex::new(pair.master.take_writer().unwrap()));
         let output = Arc::new(Mutex::new(Vec::new()));
         let sink = Arc::clone(&output);
+        let responder = Arc::clone(&writer);
         std::thread::spawn(move || {
             let mut buf = [0u8; 4096];
             while let Ok(n) = reader.read(&mut buf) {
                 if n == 0 {
                     break;
+                }
+                // A real terminal answers the queries a TUI uses to probe its
+                // capabilities, and broot ≥ 1.62 refuses to draw until it gets
+                // an answer: crossterm's keyboard-enhancement probe sends
+                // `ESC[?u` followed by the primary DA query `ESC[c`, and a
+                // terminal without kitty-keyboard support replies to the DA
+                // query. Answering it is what a plain xterm would do; staying
+                // silent makes broot abort with a termimad IO error.
+                if buf[..n].windows(3).any(|w| w == b"\x1b[c")
+                    || buf[..n].windows(4).any(|w| w == b"\x1b[0c")
+                {
+                    let mut responder = responder.lock().unwrap();
+                    let _ = responder.write_all(b"\x1b[?64;1;2c");
+                    let _ = responder.flush();
                 }
                 sink.lock().unwrap().extend_from_slice(&buf[..n]);
             }
@@ -162,8 +178,9 @@ impl Pty {
     }
 
     fn send(&mut self, bytes: &[u8]) {
-        self.writer.write_all(bytes).unwrap();
-        self.writer.flush().unwrap();
+        let mut writer = self.writer.lock().unwrap();
+        writer.write_all(bytes).unwrap();
+        writer.flush().unwrap();
     }
 
     fn output(&self) -> String {
