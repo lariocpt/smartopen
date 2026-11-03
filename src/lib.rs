@@ -864,8 +864,23 @@ fn execute(
     // Parameters are ASKED for here; the renderer substitutes them and the target
     // placeholders together in one pass. The choices command runs in the shortcut's cwd,
     // like the shortcut itself will.
-    let values = if params::names(&command.run).is_empty() {
+    let names = params::names(&command.run);
+    let values = if names.is_empty() {
         None
+    } else if opts.mode == Mode::DryRun {
+        // A dry run shows what would run; it must not become the run. Asking costs a
+        // terminal the caller may not have, and a `choices` command is a real command —
+        // `--dry-run` used to execute it before printing anything. Presets still fill
+        // in; anything unanswered stays `{{name}}` in the printed template.
+        names
+            .iter()
+            .all(|name| opts.presets.contains_key(name))
+            .then(|| {
+                names
+                    .iter()
+                    .filter_map(|name| opts.presets.get(name).map(|v| (name.clone(), v.clone())))
+                    .collect::<BTreeMap<_, _>>()
+            })
     } else {
         let cwd = plan_cwd(command, targets, None)?;
         let label = command.label.clone();

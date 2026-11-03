@@ -328,6 +328,38 @@ fn shortcuts_import_navi_prints_parseable_toml() {
 }
 
 #[test]
+fn dry_run_never_asks_and_never_runs_a_choices_command() {
+    // A `choices` command is a real command, and a prompt costs a terminal:
+    // `--dry-run` used to run the former and demand the latter before printing.
+    let sandbox = Sandbox::new();
+    let marker = sandbox.path().join("choices_ran");
+    // TOML basic strings consume backslashes, and a Windows temp path is all
+    // backslashes: `C:\Users` parses as an invalid `\U` unicode escape.
+    let marker_toml = marker.display().to_string().replace('\\', "\\\\");
+    sandbox.write_config(&format!(
+        "[[shortcut]]\nlabel = \"P\"\nrun = \"echo {{{{b}}}}\"\n\n[shortcut.param.b]\nchoices = \"echo one; echo two; touch {}\"\n",
+        marker_toml
+    ));
+
+    sandbox
+        .smartopen()
+        .args(["--dry-run", "--command", "P"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("command: echo {{b}}"));
+    assert!(!marker.exists(), "the choices command ran during a dry run");
+
+    // A preset still fills in — that is the point of --param with --dry-run.
+    sandbox
+        .smartopen()
+        .args(["--dry-run", "--command", "P", "--param", "b=x"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("command: echo x"));
+    assert!(!marker.exists(), "a preset should skip the picker too");
+}
+
+#[test]
 fn shortcuts_import_write_appends_to_the_config_in_effect_not_the_default() {
     // `--config-path` selects the config for every other subcommand; `--write`
     // used to append to the default one anyway — backing up and editing a file
