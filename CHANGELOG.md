@@ -13,6 +13,10 @@ section here. `version` in `Cargo.toml` must match the tag being released.
 
 ### Fixed
 
+- **`shortcuts import --write` wrote to the default config even with `--config-path`.**
+  Every other subcommand honours `--config-path`; the importer resolved the default path
+  itself, so it backed up and appended to a file the user never named while the named one
+  stayed untouched. It now appends to the config in effect.
 - **The installer died on stock Alpine.** busybox wget has no `--https-only` and rejects
   the whole command line when it sees one, so `wget -qO- … | sh` ended in a usage dump
   and an error blaming the release — on the one distribution the static musl build exists
