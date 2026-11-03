@@ -25,6 +25,10 @@ section here. `version` in `Cargo.toml` must match the tag being released.
   and aborts with a termimad IO error when no terminal ever replies, so the tree was
   never drawn and the Enter-verb chain could not be tested. The pty harness now answers
   the DA query the way a plain xterm does, which crossterm reads as "no kitty support".
+- **`shortcuts import --write` wrote to the default config even with `--config-path`.**
+  Every other subcommand honours `--config-path`; the importer resolved the default path
+  itself, so it backed up and appended to a file the user never named while the named one
+  stayed untouched. It now appends to the config in effect.
 - **The installer died on stock Alpine.** busybox wget has no `--https-only` and rejects
   the whole command line when it sees one, so `wget -qO- … | sh` ended in a usage dump
   and an error blaming the release — on the one distribution the static musl build exists
