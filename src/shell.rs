@@ -157,8 +157,8 @@ mod tests {
     #[test]
     fn cmd_leaves_plain_windows_paths_bare() {
         assert_eq!(
-            Shell::Cmd.quote(r"C:\Users\lario\file.rs").unwrap(),
-            r"C:\Users\lario\file.rs"
+            Shell::Cmd.quote(r"C:\Users\you\file.rs").unwrap(),
+            r"C:\Users\you\file.rs"
         );
     }
 
