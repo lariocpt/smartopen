@@ -298,7 +298,7 @@ mod tests {
         assert!(parse_url("https://example.com/a").is_some());
         assert!(parse_url("mailto:someone@example.com").is_some());
         assert!(
-            parse_url(r"C:\Users\lario\file.rs").is_none(),
+            parse_url(r"C:\Users\you\file.rs").is_none(),
             "drive letters are paths"
         );
         assert!(parse_url("./notes:today.md").is_none());
