@@ -59,6 +59,11 @@ section here. `version` in `Cargo.toml` must match the tag being released.
 
 ### Changed
 
+- **The LAN mirror job's pipeline left this repository.** The Jenkinsfile names internal
+  hosts and paths, and this repository is public now, so the pipeline lives in the
+  estate's private infrastructure repo beside the other release-mirror jobs. It mirrors
+  the same GitHub releases byte-identically; nothing about what a public consumer
+  installs changes.
 - The README no longer advertises `yay -S smartopen-bin`: the AUR package is written and
   its checksums match the release, but it has not been submitted. It says so instead.
 - The README's manual-download paragraph distinguishes the static `-musl` archives from
