@@ -727,9 +727,13 @@ fn run_subcommand(subcommand: Subcommands, config_path: &Path, no_project: bool)
                 print!("{fragment}");
                 return Ok(0);
             }
-            let config_path = default_config_path()?;
+            // The resolved config — `--config-path` included, like every other
+            // subcommand. This used to call `default_config_path()` directly, so
+            // `--config-path X … --write` backed up and appended to the DEFAULT
+            // config while the user believed X was the target: a silent write to
+            // a file they did not name.
             if config_path.exists() {
-                let backup = tomlio::backup(&config_path)?;
+                let backup = tomlio::backup(config_path)?;
                 eprintln!(
                     "backed up {} -> {}",
                     config_path.display(),
@@ -741,7 +745,7 @@ fn run_subcommand(subcommand: Subcommands, config_path: &Path, no_project: bool)
             let mut file = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
-                .open(&config_path)
+                .open(config_path)
                 .with_context(|| format!("opening {}", config_path.display()))?;
             writeln!(
                 file,

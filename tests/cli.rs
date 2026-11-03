@@ -360,6 +360,38 @@ fn dry_run_never_asks_and_never_runs_a_choices_command() {
 }
 
 #[test]
+fn shortcuts_import_write_appends_to_the_config_in_effect_not_the_default() {
+    // `--config-path` selects the config for every other subcommand; `--write`
+    // used to append to the default one anyway — backing up and editing a file
+    // the user never named while the named one stayed untouched.
+    let sandbox = Sandbox::new();
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/git.cheat");
+    let chosen = sandbox.path().join("picked.toml");
+    fs::write(&chosen, "[menu]\n").unwrap();
+    let default = sandbox.write_config("[menu]\n");
+
+    sandbox
+        .smartopen()
+        .args(["--config-path"])
+        .arg(&chosen)
+        .args(["shortcuts", "import", "navi"])
+        .arg(&fixture)
+        .arg("--write")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(chosen.display().to_string()));
+
+    let written = fs::read_to_string(&chosen).unwrap();
+    assert!(written.contains("[[shortcut]]"), "{written}");
+    assert!(
+        !fs::read_to_string(&default)
+            .unwrap()
+            .contains("[[shortcut]]"),
+        "the default config must not be the write target"
+    );
+}
+
+#[test]
 fn yazi_print_quotes_a_bin_that_is_not_a_plain_name() {
     // The bin is embedded in a shell line yazi runs; unquoted, a spaced path became
     // two words and a `;` became a second command written into yazi.toml.
